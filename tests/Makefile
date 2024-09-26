@@ -42,7 +42,10 @@ STFB_PROGRAMS = fizz_buzz_count_0_0 fizz_buzz_count_1_0 fizz_buzz_count_2_0 fizz
 				fizz_buzz_print_0_0 fizz_buzz_print_1_0 fizz_buzz_print_2_0 fizz_buzz_print_3_0 \
 				full_hazards_0_0 full_hazards_1_0 full_hazards_2_0 full_hazards_3_0 \
 				parallel_hazards_0_0 parallel_hazards_1_0 parallel_hazards_2_0 parallel_hazards_3_0 \
-				b_blks_0_0 b_blks_1_0 b_blks_2_0 b_blks_3_0
+				b_blks_0 b_blks_1 b_blks_2 b_blks_3 \
+				simple_loop_6l_0 simple_loop_6l_1 simple_loop_6l_2 simple_loop_6l_3 \
+				simple_loop_10l_0 simple_loop_10l_1 simple_loop_10l_2 simple_loop_10l_3 \
+				simple_loop_20l_0 simple_loop_20l_1 simple_loop_20l_2 simple_loop_20l_3
 ## append stbfb programs to programs list
 PROGRAMS += $(addprefix $(STFB_FOLDER)/, $(STFB_PROGRAMS))
 
