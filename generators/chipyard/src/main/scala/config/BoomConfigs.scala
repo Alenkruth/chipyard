@@ -29,6 +29,15 @@ class GigaBoomConfig extends Config(
   new chipyard.config.WithSystemBusWidth(128) ++
   new chipyard.config.AbstractConfig
   )
+
+// core fuzzing boom config
+class GigaBoomConfigCF extends Config(
+  new boom.common.WithNCFGigaBooms(1) ++                           // giga boom config
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig ++
+  new boom.common.WithBoomCommitLogPrintf
+  )
+
 class DualSmallBoomConfig extends Config(
   new boom.common.WithNSmallBooms(2) ++                          // 2 boom cores
   new chipyard.config.AbstractConfig)
