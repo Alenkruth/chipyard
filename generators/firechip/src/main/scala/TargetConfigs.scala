@@ -286,6 +286,13 @@ class FireSimLargeBoomConfig extends Config(
   new WithFireSimConfigTweaks ++
   new chipyard.LargeBoomV3Config)
 
+// Giga config
+class FireSimGigaBoomConfig extends Config(
+  new WithDefaultFireSimBridges ++
+  new WithDefaultMemModel ++
+  new WithFireSimConfigTweaks ++
+  new chipyard.GigaBoomV3Config
+)
 //********************************************************************
 // Heterogeneous config, base off chipyard's LargeBoomAndRocketConfig
 //********************************************************************
