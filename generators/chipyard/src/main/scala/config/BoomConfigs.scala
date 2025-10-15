@@ -2,6 +2,46 @@ package chipyard
 
 import org.chipsalliance.cde.config.{Config}
 
+// --------------------
+// Boom V3 CoreFuzzing Configs
+// Do not use these for non-corefuzzing applications
+// --------------------
+// 
+// class SmallBoomConfig extends Config(
+//   new boom.common.WithNSmallBooms(1) ++                          // small boom config
+//   new chipyard.config.AbstractConfig)
+// 
+// class MediumBoomConfig extends Config(
+//   new boom.common.WithNMediumBooms(1) ++                         // medium boom config
+//   new chipyard.config.AbstractConfig)
+// 
+// class LargeBoomConfig extends Config(
+//   new boom.common.WithNLargeBooms(1) ++                          // large boom config
+//   new chipyard.config.WithSystemBusWidth(128) ++
+//   new chipyard.config.AbstractConfig)
+// 
+// class MegaBoomConfig extends Config(
+//   new boom.common.WithNMegaBooms(1) ++                           // mega boom config
+//   new chipyard.config.WithSystemBusWidth(128) ++
+//   new chipyard.config.AbstractConfig)
+// 
+// class GigaBoomConfig extends Config(
+//   new boom.common.WithNGigaBooms(1) ++                           // giga boom config
+//   new chipyard.config.WithSystemBusWidth(128) ++
+//   new chipyard.config.AbstractConfig
+//   )
+// 
+// // core fuzzing boom config
+// class GigaBoomConfigCF extends Config(
+//   new boom.common.WithNCFGigaBooms(1) ++                           // giga boom config
+//   new chipyard.config.WithSystemBusWidth(128) ++
+//   new chipyard.config.AbstractConfig ++
+//   new boom.common.WithBoomCommitLogPrintf
+//   )
+// 
+// ---------------------
+
+
 // ---------------------
 // BOOM V3 Configs
 // Performant, stable baseline
@@ -24,6 +64,12 @@ class MegaBoomV3Config extends Config(
   new boom.v3.common.WithNMegaBooms(1) ++                           // mega boom config
   new chipyard.config.WithSystemBusWidth(128) ++
   new chipyard.config.AbstractConfig)
+
+class GigaBoomV3Config extends Config(
+  new boom.v3.common.WithNGigaBooms(1) ++ // Giga Boom Config
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig
+)
 
 class DualSmallBoomV3Config extends Config(
   new boom.v3.common.WithNSmallBooms(2) ++                          // 2 boom cores
