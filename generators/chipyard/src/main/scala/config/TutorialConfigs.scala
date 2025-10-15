@@ -27,7 +27,7 @@ class TutorialStarterConfig extends Config(
   // CUSTOMIZE THE CORE
   // Uncomment out one (or multiple) of the lines below, and choose
   // how many cores you want.
-  // new freechips.rocketchip.rocket.WithNBigCores(1) ++    // Specify we want some number of Rocket cores
+  // new freechips.rocketchip.rocket.WithNHugeCores(1) ++    // Specify we want some number of Rocket cores
   // new boom.v3.common.WithNSmallBooms(1) ++                     // Specify we want some number of BOOM cores
 
   // CUSTOMIZE the L2
@@ -46,14 +46,13 @@ class TutorialMMIOConfig extends Config(
   // new chipyard.example.WithGCD(useAXI4=true) ++  // Use AXI4 version
 
   // For this demonstration we assume the base system is a single-core Rocket, for fast elaboration
-  new freechips.rocketchip.rocket.WithNBigCores(1) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
   new chipyard.config.AbstractConfig
 )
 
 
 // Tutorial Phase 5: Map a multicore heterogeneous SoC with multiple cores and memory-mapped accelerators
 class TutorialNoCConfig extends Config(
-  new chipyard.harness.WithDontTouchChipTopPorts(false) ++
   // Try changing the dimensions of the Mesh topology
   new constellation.soc.WithGlobalNoC(constellation.soc.GlobalNoCParams(
     NoCParams(
@@ -85,11 +84,10 @@ class TutorialNoCConfig extends Config(
   new chipyard.example.WithGCD ++
   new chipyard.harness.WithLoopbackNIC ++
   new icenet.WithIceNIC ++
-  new fftgenerator.WithFFTGenerator(numPoints=8) ++
   new chipyard.example.WithStreamingFIR ++
   new chipyard.example.WithStreamingPassthrough ++
 
   new freechips.rocketchip.subsystem.WithNBanks(4) ++
-  new freechips.rocketchip.rocket.WithNBigCores(2) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(2) ++
   new chipyard.config.AbstractConfig
 )

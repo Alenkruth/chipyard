@@ -29,6 +29,7 @@ so changes to the generators themselves will automatically be used when building
    Rocket-Chip-Generators
    CVA6
    Ibex
+   VexiiRiscv
    fft
    NVDLA
    Sodor
@@ -36,3 +37,4 @@ so changes to the generators themselves will automatically be used when building
    Mempress
    CompressAcc
    Prefetchers
+   Ara

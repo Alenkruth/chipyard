@@ -115,12 +115,6 @@
 [submodule "tools/circt"]
 	path = tools/circt
 	url = https://github.com/llvm/circt.git
-[submodule "tools/dsptools-fixedpoint"]
-	path = tools/dsptools-chisel3
-	url = https://github.com/ucb-bar/dsptools.git
-[submodule "tools/fixedpoint-chisel3"]
-	path = tools/fixedpoint-chisel3
-	url = https://github.com/ucb-bar/fixedpoint.git
 [submodule "tools/install-circt"]
 	path = tools/install-circt
 	url = https://github.com/circt/install-circt.git
@@ -130,18 +124,12 @@
 [submodule "tools/torture"]
 	path = tools/torture
 	url = https://github.com/ucb-bar/riscv-torture.git
-[submodule "vlsi/hammer-mentor-plugins"]
-	path = vlsi/hammer-mentor-plugins
-	url = https://github.com/ucb-bar/hammer-mentor-plugins.git
 [submodule "tools/dsptools"]
 	path = tools/dsptools
 	url = https://github.com/ucb-bar/dsptools.git
 [submodule "tools/fixedpoint"]
 	path = tools/fixedpoint
 	url = https://github.com/ucb-bar/fixedpoint.git
-[submodule "tools/midas-targetutils"]
-	path = tools/midas-targetutils
-	url = https://github.com/firesim/midas-targetutils.git
 [submodule "generators/rerocc"]
 	path = generators/rerocc
 	url = https://github.com/ucb-bar/rerocc.git
@@ -154,3 +142,24 @@
 [submodule "software/firesim-paper-workloads"]
 	path = software/firesim-paper-workloads
 	url = https://github.com/firesim/firesim-paper-workloads.git
+[submodule "generators/ara"]
+	path = generators/ara
+	url = https://github.com/ucb-bar/ara-wrapper.git
+[submodule "tools/firrtl2"]
+	path = tools/firrtl2
+	url = https://github.com/ucb-bar/firrtl2.git
+[submodule "generators/vexiiriscv"]
+	path = generators/vexiiriscv
+	url = https://github.com/ucb-bar/vexiiriscv-tile.git
+[submodule "software/zephyrproject/zephyr"]
+	path = software/zephyrproject/zephyr
+	url = https://github.com/ucb-bar/zephyr.git
+[submodule "software/tacit_decoder"]
+	path = software/tacit_decoder
+	url = https://github.com/riscv-tacit/tacit_decoder.git
+[submodule "generators/tacit"]
+	path = generators/tacit
+	url = https://github.com/riscv-tacit/tacit.git
+[submodule "generators/radiance"]
+	path = generators/radiance
+	url = https://github.com/ucb-bar/radiance.git

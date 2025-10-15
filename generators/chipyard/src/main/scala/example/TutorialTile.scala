@@ -64,12 +64,11 @@ case class MyCoreParams(
   val decodeWidth: Int = 1 // TODO: Check
   val fetchWidth: Int = 1 // TODO: Check
   val retireWidth: Int = 2
-  val useBitManip: Boolean = false
-  val useBitManipCrypto: Boolean = false
-  val useCryptoNIST: Boolean = false
-  val useCryptoSM: Boolean = false
   val traceHasWdata: Boolean = false
   val useConditionalZero = false
+  val useZba: Boolean = false
+  val useZbb: Boolean = false
+  val useZbs: Boolean = false
 }
 
 // DOC include start: CanAttachTile
@@ -172,9 +171,6 @@ class MyTile(
 
 // DOC include start: Implementation class
 class MyTileModuleImp(outer: MyTile) extends BaseTileModuleImp(outer){
-  // annotate the parameters
-  Annotated.params(this, outer.myParams)
-
   // TODO: Create the top module of the core and connect it with the ports in "outer"
 
   // If your core is in Verilog (assume your blackbox is called "MyCoreBlackbox"), instantiate it here like

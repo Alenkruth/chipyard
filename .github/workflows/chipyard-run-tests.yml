@@ -27,16 +27,26 @@ jobs:
         with:
           access_token: ${{ github.token }}
 
+  start-workflow:
+    name: start-workflow
+    # unable to access env context in job.if thus have to put gh-a context expression directly here.
+    # note that the check is using a boolean true instead of string 'true' since it's directly using
+    # the expression not a variable like if checking against the env context string.
+    if: ${{ contains(github.event.pull_request.labels.*.name, 'ci:disable') != true }}
+    runs-on: ubuntu-22.04
+    steps:
+      - run: true
+
   # Set up a set of boolean conditions to control which branches of the CI
   # workflow will execute This is based off the conditional job execution
   # example here: https://github.com/dorny/paths-filter#examples
   change-filters:
     name: filter-jobs-on-changes
     runs-on: ubuntu-latest
+    needs: start-workflow
     # Queried by downstream jobs to determine if they should run.
     outputs:
       needs-rtl: ${{ steps.filter.outputs.all_count != steps.filter.outputs.skip-rtl_count }}
-
     steps:
       - uses: actions/checkout@v4
       - name: Git workaround
@@ -59,6 +69,9 @@ jobs:
               - '**/*.md'
               - '**/.gitignore'
               - '.github/ISSUE_TEMPLATE/**'
+              - '.github/PULL_REQUEST_TEMPLATE.md'
+              - '.github/dependabot.yml'
+              - '.mergify.yml'
 
   create-conda-env-as4:
     name: create-conda-env-as4
@@ -137,6 +150,7 @@ jobs:
       - name: Check that documentation builds with no warnings/errors
         run: |
           conda activate ${{ env.conda-env-name-no-time }}-$(date --date "${{ env.workflow-timestamp }}" +%Y%m%d)
+          scripts/init-submodules-no-riscv-tools.sh --full
           make -C docs html
       - name: Show error log from sphinx if failed
         if: ${{ failure() }}
@@ -352,7 +366,7 @@ jobs:
       - name: Build Gemmini FireMarshal
         run: |
           conda activate ${{ env.conda-env-name-no-time }}-$(date --date "${{ env.workflow-timestamp }}" +%Y%m%d)
-          cd ${{ github.workspace }} && ./scripts/init-submodules-no-riscv-tools.sh
+          cd ${{ github.workspace }} && ./scripts/init-submodules-no-riscv-tools.sh --full
           cd ${{ github.workspace }} && source ./scripts/fix-open-files.sh
           git submodule update --init software/firemarshal && cd software/firemarshal && ./init-submodules.sh
           cd ${{ github.workspace }}/generators/gemmini/software && ${{ github.workspace }}/software/firemarshal/marshal -v -d build gemmini-smoke.json
@@ -499,6 +513,103 @@ jobs:
           group-key: "group-cores"
           project-key: "chipyard-shuttle"
 
+  chipyard-shuttle3-run-tests:
+    name: chipyard-shuttle3-run-tests
+    needs: prepare-chipyard-cores
+    runs-on: as4
+    steps:
+      - name: Delete old checkout
+        run: |
+            ls -alh .
+            rm -rf ${{ github.workspace }}/* || true
+            rm -rf ${{ github.workspace }}/.* || true
+            ls -alh .
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Git workaround
+        uses: ./.github/actions/git-workaround
+      - name: Create conda env
+        uses: ./.github/actions/create-conda-env
+      - name: Run tests
+        uses: ./.github/actions/run-tests
+        with:
+          group-key: "group-cores"
+          project-key: "chipyard-shuttle3"
+    
+  chipyard-radiance-run-tests:
+    name: chipyard-radiance-run-tests
+    needs: prepare-chipyard-cores
+    runs-on: as4
+    steps:
+      - name: Delete old checkout
+        run: |
+            ls -alh .
+            rm -rf ${{ github.workspace }}/* || true
+            rm -rf ${{ github.workspace }}/.* || true
+            ls -alh .
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Git workaround
+        uses: ./.github/actions/git-workaround
+      - name: Create conda env
+        uses: ./.github/actions/create-conda-env
+      - name: Run tests
+        uses: ./.github/actions/run-tests
+        with:
+          group-key: "group-cores"
+          project-key: "chipyard-radiance"
+
+  chipyard-tacit-rocket-run-tests:
+    name: chipyard-tacit-rocket-run-tests
+    needs: prepare-chipyard-cores
+    runs-on: as4
+    steps:
+      - name: Delete old checkout
+        run: |
+            ls -alh .
+            rm -rf ${{ github.workspace }}/* || true
+            rm -rf ${{ github.workspace }}/.* || true
+            ls -alh .
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Git workaround
+        uses: ./.github/actions/git-workaround
+      - name: Create conda env
+        uses: ./.github/actions/create-conda-env
+      - name: Run tests
+        uses: ./.github/actions/run-tests
+        with:
+          group-key: "group-cores"
+          project-key: "chipyard-tacit-rocket"
+
+  chipyard-rocket-zephyr-run-tests:
+    name: chipyard-rocket-zephyr-run-tests
+    needs: prepare-chipyard-cores
+    runs-on: as4
+    steps:
+      - name: Delete old checkout
+        run: |
+            ls -alh .
+            rm -rf ${{ github.workspace }}/* || true
+            rm -rf ${{ github.workspace }}/.* || true
+            ls -alh .
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Git workaround
+        uses: ./.github/actions/git-workaround
+      - name: Create conda env
+        uses: ./.github/actions/create-conda-env
+      - name: Build zephyr hello world
+        run: |
+            conda activate ${{ env.conda-env-name-no-time }}-$(date --date "${{ env.workflow-timestamp }}" +%Y%m%d)
+            .github/scripts/build-zephyr.sh
+      - name: Run tests
+        uses: ./.github/actions/run-tests
+        with:
+          group-key: "group-cores"
+          project-key: "chipyard-zephyr"
+
+
   chipyard-cva6-run-tests:
     name: chipyard-cva6-run-tests
     needs: prepare-chipyard-cores
@@ -544,6 +655,29 @@ jobs:
         with:
           group-key: "group-cores"
           project-key: "chipyard-ibex"
+
+  chipyard-vexiiriscv-run-tests:
+    name: chipyard-vexiiriscv-run-tests
+    needs: prepare-chipyard-cores
+    runs-on: as4
+    steps:
+      - name: Delete old checkout
+        run: |
+            ls -alh .
+            rm -rf ${{ github.workspace }}/* || true
+            rm -rf ${{ github.workspace }}/.* || true
+            ls -alh .
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Git workaround
+        uses: ./.github/actions/git-workaround
+      - name: Create conda env
+        uses: ./.github/actions/create-conda-env
+      - name: Run tests
+        uses: ./.github/actions/run-tests
+        with:
+          group-key: "group-cores"
+          project-key: "chipyard-vexiiriscv"
 
   chipyard-sodor-run-tests:
     name: chipyard-sodor-run-tests
@@ -810,7 +944,7 @@ jobs:
             rm -rf ${{ github.workspace }}/.* || true
             ls -alh .
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Git workaround
         uses: ./.github/actions/git-workaround
       - name: Create conda env
@@ -833,7 +967,7 @@ jobs:
             rm -rf ${{ github.workspace }}/.* || true
             ls -alh .
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Git workaround
         uses: ./.github/actions/git-workaround
       - name: Create conda env
@@ -1160,55 +1294,6 @@ jobs:
           group-key: "group-constellation"
           project-key: "chipyard-constellation"
 
-
-  firesim-run-tests:
-    name: firesim-run-tests
-    needs: setup-complete
-    runs-on: as4
-    steps:
-      - name: Delete old checkout
-        run: |
-            ls -alh .
-            rm -rf ${{ github.workspace }}/* || true
-            rm -rf ${{ github.workspace }}/.* || true
-            ls -alh .
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Git workaround
-        uses: ./.github/actions/git-workaround
-      - name: Create conda env
-        uses: ./.github/actions/create-conda-env
-      - name: Run tests on self-hosted
-        uses: ./.github/actions/run-tests
-        with:
-          group-key: "extra-tests"
-          project-key: "firesim"
-          run-script: "remote-run-firesim-scala-tests.sh"
-
-  fireboom-run-tests:
-    name: fireboom-run-tests
-    needs: setup-complete
-    runs-on: as4
-    steps:
-      - name: Delete old checkout
-        run: |
-            ls -alh .
-            rm -rf ${{ github.workspace }}/* || true
-            rm -rf ${{ github.workspace }}/.* || true
-            ls -alh .
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Git workaround
-        uses: ./.github/actions/git-workaround
-      - name: Create conda env
-        uses: ./.github/actions/create-conda-env
-      - name: Run tests on self-hosted
-        uses: ./.github/actions/run-tests
-        with:
-          group-key: "extra-tests"
-          project-key: "fireboom"
-          run-script: "remote-run-firesim-scala-tests.sh"
-
   # Sentinel job to simplify how we specify which checks need to pass in branch
   # protection and in Mergify
   #
@@ -1222,8 +1307,12 @@ jobs:
             chipyard-boomv3-run-tests,
             chipyard-boomv4-run-tests,
             chipyard-shuttle-run-tests,
+            chipyard-shuttle3-run-tests,
+            chipyard-tacit-rocket-run-tests,
+            chipyard-rocket-zephyr-run-tests,
             chipyard-cva6-run-tests,
             chipyard-ibex-run-tests,
+            chipyard-vexiiriscv-run-tests,
             chipyard-sodor-run-tests,
             chipyard-dmiboomv3-run-tests,
             chipyard-dmiboomv4-run-tests,
@@ -1249,8 +1338,7 @@ jobs:
             testchipip-run-tests,
             rocketchip-run-tests,
             constellation-run-tests,
-            prepare-chipyard-fpga, # firesim-run-tests,
-            fireboom-run-tests]
+            prepare-chipyard-fpga]
     runs-on: ubuntu-latest
     steps:
       - run: echo Success!
