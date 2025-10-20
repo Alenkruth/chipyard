@@ -68,8 +68,12 @@ class MegaBoomV3Config extends Config(
 class GigaBoomV3Config extends Config(
   new boom.v3.common.WithNGigaBooms(1) ++ // Giga Boom Config
   new chipyard.config.WithSystemBusWidth(128) ++
-  new chipyard.config.AbstractConfig
-)
+  new chipyard.config.AbstractConfig)
+
+class CoreFuzzingConfig extends Config(
+  new boom.v3.common.WithFuzzingBoom(1) ++ // Core Fuzzing Boom Config
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig)
 
 class DualSmallBoomV3Config extends Config(
   new boom.v3.common.WithNSmallBooms(2) ++                          // 2 boom cores
