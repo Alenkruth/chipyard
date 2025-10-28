@@ -262,6 +262,13 @@ class FireSimGigaBoomConfig extends Config(
   new chipyard.GigaBoomV3Config
 )
 
+// core fuzzing config
+class FireSimCoreFuzzingConfig extends Config(
+  new WithDefaultFireSimBridges ++
+  new WithFireSimConfigTweaks ++
+  new chipyard.CoreFuzzingConfig
+)
+
 // WithDefaultMemModel seems to throw an error
 // class FireSimGigaBoomConfig extends Config(
 //   new WithDefaultFireSimBridges ++
