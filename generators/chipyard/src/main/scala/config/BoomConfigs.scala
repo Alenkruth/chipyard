@@ -70,6 +70,11 @@ class GigaBoomV3Config extends Config(
   new chipyard.config.WithSystemBusWidth(128) ++
   new chipyard.config.AbstractConfig)
 
+class TeraBoomV3Config extends Config(
+  new boom.v3.common.WithNTeraBooms(1) ++ // Tera Boom Config
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig)
+
 class CoreFuzzingConfig extends Config(
   new boom.v3.common.WithFuzzingBoom(1) ++ // Core Fuzzing Boom Config
   new chipyard.config.WithSystemBusWidth(128) ++
