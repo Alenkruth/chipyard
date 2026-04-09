@@ -60,6 +60,7 @@ class AbstractConfig extends Config(
   new chipyard.iobinders.WithBlockDeviceIOPunchthrough ++
   new chipyard.iobinders.WithNICIOPunchthrough ++
   new chipyard.iobinders.WithTraceIOPunchthrough ++
+  new chipyard.iobinders.WithIFTPunchthrough ++          /** punch BOOM IFT tile IO to ChipTop for FireSim IFTBridge (no-op when enableIFTBridge=false) */
   new chipyard.iobinders.WithUARTTSIPunchthrough ++
   new chipyard.iobinders.WithGCDIOPunchthrough ++
   new chipyard.iobinders.WithNMITiedOff ++

@@ -519,6 +519,22 @@ class WithTraceIOPunchthrough extends OverrideLazyIOBinder({
   }
 })
 
+// IFT bridge punchthrough: one IFTPort per IFT-enabled BOOM tile.
+// Reads DigitalTop-boundary Output IOs (created by CanHaveBoomIFTIO's InModuleBody)
+// and re-exposes them as ChipTop Output IOs wrapped in IFTPort.
+// ChipTop is the direct parent of DigitalTop so reading its Output ports is valid.
+// No-op when iftBoundaryIOs is empty (no tiles have enableIFTBridge=true).
+class WithIFTPunchthrough extends OverrideLazyIOBinder({
+  (system: chipyard.CanHaveBoomIFTIO) => InModuleBody {
+    val ports: Seq[IFTPort] = system.iftBoundaryIOs.map { case (_, boundaryIO, rw) =>
+      val port = IO(Output(new boom.v3.exu.IFTTileIO(rw)))
+      port := boundaryIO
+      IFTPort(() => port)
+    }
+    (ports, Nil)
+  }
+})
+
 class WithCustomBootPin extends OverrideIOBinder({
   (system: CanHavePeripheryCustomBootPin) => system.custom_boot_pin.map({ p =>
     val sys = system.asInstanceOf[BaseSubsystem]

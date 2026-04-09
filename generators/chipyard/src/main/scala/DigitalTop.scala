@@ -36,6 +36,7 @@ class DigitalTop(implicit p: Parameters) extends ChipyardSystem
   with chipyard.clocking.CanHaveClockTap // Enables optionally adding a clock tap output port
   with constellation.soc.CanHaveGlobalNoC // Support instantiating a global NoC interconnect
   with rerocc.CanHaveReRoCCTiles // Support tiles that instantiate rerocc-attached accelerators
+  with chipyard.CanHaveBoomIFTIO // Enables optionally adding IFT tile IO for BOOM FireSim bridge
 {
   override lazy val module = new DigitalTopModule(this)
 }

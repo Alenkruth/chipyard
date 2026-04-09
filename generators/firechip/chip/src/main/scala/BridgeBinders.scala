@@ -141,6 +141,14 @@ class WithSuccessBridge extends HarnessBinder({
   }
 })
 
+// IFT bridge: one IFTBridgeModule per BOOM tile that has enableIFTBridge=true.
+// No-op when IFTPort is absent (i.e., non-IFT configs).
+class WithIFTVBridge extends HarnessBinder({
+  case (th: FireSim, port: chipyard.iobinders.IFTPort, chipId: Int) => {
+    firechip.bridgestubs.IFTBridge(port.io)(th.p)
+  }
+})
+
 // Shorthand to register all of the provided bridges above
 class WithDefaultFireSimBridges extends Config(
   new WithTSIBridgeAndHarnessRAMOverSerialTL ++
@@ -152,6 +160,7 @@ class WithDefaultFireSimBridges extends Config(
   new WithFireSimMultiCycleRegfile ++
   new WithFireSimFAME5 ++
   new WithTracerVBridge ++
+  new WithIFTVBridge ++
   new WithFireSimIOCellModels
 )
 

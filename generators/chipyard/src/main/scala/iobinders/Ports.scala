@@ -88,6 +88,11 @@ case class SuccessPort     (val getIO: () => Bool)
 case class TracePort       (val getIO: () => TraceOutputTop, val cosimCfg: SpikeCosimConfig)
     extends Port[TraceOutputTop]
 
+// IFTPort: one instance per BOOM tile with enableIFTBridge=true.
+// Each carries one IFTTileIO; WithIFTVBridge creates one IFTBridge per port.
+case class IFTPort(val getIO: () => boom.v3.exu.IFTTileIO)
+    extends Port[boom.v3.exu.IFTTileIO]
+
 case class CustomBootPort  (val getIO: () => Bool)
     extends Port[Bool]
 

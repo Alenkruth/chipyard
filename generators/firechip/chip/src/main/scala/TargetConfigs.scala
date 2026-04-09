@@ -262,11 +262,19 @@ class FireSimGigaBoomConfig extends Config(
   new chipyard.GigaBoomV3Config
 )
 
-// core fuzzing config
+// core fuzzing config (printf path — IFTBridge disabled)
 class FireSimCoreFuzzingConfig extends Config(
   new WithDefaultFireSimBridges ++
   new WithFireSimConfigTweaks ++
   new chipyard.CoreFuzzingConfig
+)
+
+// core fuzzing config with IFTBridge enabled (binary DMA path)
+// Uses CoreFuzzingFireSimConfig which adds WithIFTBridge on top of CoreFuzzingConfig.
+class FireSimCoreFuzzingIFTConfig extends Config(
+  new WithDefaultFireSimBridges ++
+  new WithFireSimConfigTweaks ++
+  new chipyard.CoreFuzzingFireSimConfig
 )
 
 // WithDefaultMemModel seems to throw an error

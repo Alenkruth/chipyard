@@ -80,6 +80,15 @@ class CoreFuzzingConfig extends Config(
   new chipyard.config.WithSystemBusWidth(128) ++
   new chipyard.config.AbstractConfig)
 
+// FireSim FPGA variant: inherits ALL parameters from CoreFuzzingConfig.
+// Adds WithIFTBridge which exports IFT commit/squash records as tile IO for GoldenGate synthesis.
+// WithIFTPunchthrough (in AbstractConfig) creates the IFTPort; WithIFTVBridge (firechip) connects it.
+// To change any hardware parameters, edit only CoreFuzzingConfig above.
+class CoreFuzzingFireSimConfig extends Config(
+  new boom.v3.common.WithoutBoomCommitLogPrintf ++ // IFTBridge replaces printfs; suppress PrintBridge synthesis
+  new boom.v3.common.WithIFTBridge ++
+  new CoreFuzzingConfig)
+
 class DualSmallBoomV3Config extends Config(
   new boom.v3.common.WithNSmallBooms(2) ++                          // 2 boom cores
   new chipyard.config.AbstractConfig)
