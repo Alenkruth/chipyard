@@ -18,8 +18,8 @@ class TracerVBridgeModule(key: TraceBundleWidths)(implicit p: Parameters)
     with StreamToHostCPU {
 
   // StreamToHostCPU  mixin parameters
-  // Use the legacy NIC depth
-  val toHostCPUQueueDepth = 6144
+  // Reduced for FPGA LUT optimization (pointer counter fanout reduction).
+  val toHostCPUQueueDepth = 2048
 
   lazy val module = new BridgeModuleImp(this) {
     val io    = IO(new WidgetIO)

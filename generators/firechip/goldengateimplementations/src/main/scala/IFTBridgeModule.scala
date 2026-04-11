@@ -33,8 +33,10 @@ class IFTBridgeModule(key: IFTBridgeParams)(implicit p: Parameters)
     extends BridgeModule[HostPortIO[IFTBridgeTargetIO]]()(p)
     with StreamToHostCPU {
 
-  // Depth chosen to match TracerVBridge; tunable via +ift-bridge-depth=N plusarg.
-  val toHostCPUQueueDepth = 6144
+  // Depth reduced for FPGA LUT optimization (pointer fanout reduction).
+  // At 25 MHz × retireWidth=4, peak = 100M records/sec; PCIe drains ~312M/sec.
+  // 2048 entries = ~20 µs of buffering — sufficient for host-driver jitter.
+  val toHostCPUQueueDepth = 2048
 
   lazy val module = new BridgeModuleImp(this) {
     val io    = IO(new WidgetIO)
