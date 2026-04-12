@@ -33,10 +33,17 @@ class IFTBridgeModule(key: IFTBridgeParams)(implicit p: Parameters)
     extends BridgeModule[HostPortIO[IFTBridgeTargetIO]]()(p)
     with StreamToHostCPU {
 
-  // Depth reduced for FPGA LUT optimization (pointer fanout reduction).
-  // At 25 MHz × retireWidth=4, peak = 100M records/sec; PCIe drains ~312M/sec.
-  // 2048 entries = ~20 µs of buffering — sufficient for host-driver jitter.
-  val toHostCPUQueueDepth = 2048
+  // Depth further reduced for FPGA LUT optimization (pointer fanout relief).
+  // At 30 MHz × retireWidth=4 × 2 records/beat, peak is ~45M beats/sec; PCIe
+  // Gen3 x16 drains at >300M beats/sec, so the queue is for host-driver poll
+  // jitter, not sustained bandwidth.  512 entries = ~5.7 µs of buffering,
+  // sufficient for typical 1–5 µs MMIO poll cadences.  Reducing 2048→512
+  // consolidates URAM placement (~16 → ~4 URAMs), shortens enq_ptr broadcast
+  // routing, and drops two bits off the Counter-based pointer — relieving the
+  // many [Physopt 32-1132] very-high-fanout warnings Vivado reported on
+  // enq_ptr_value_reg[*]_rep__* replicas.  If host polling falls behind in
+  // practice, bump to 1024; do not drop below 256.
+  val toHostCPUQueueDepth = 512
 
   lazy val module = new BridgeModuleImp(this) {
     val io    = IO(new WidgetIO)
