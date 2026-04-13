@@ -76,9 +76,61 @@ class TeraBoomV3Config extends Config(
   new chipyard.config.AbstractConfig)
 
 class CoreFuzzingConfig extends Config(
+  new boom.v3.common.WithIFT ++            // compile-time gate: enable DIFT tracking
+  new boom.v3.common.WithReconf ++         // compile-time gate: enable runtime reconfigurability
   new boom.v3.common.WithFuzzingBoom(1) ++ // Core Fuzzing Boom Config
   new chipyard.config.WithSystemBusWidth(128) ++
   new chipyard.config.AbstractConfig)
+
+// BaselineBoomConfig — same BOOM hardware sizing as CoreFuzzingConfig but with
+// both compile-time feature gates OFF (enableIFT=false, enableReconf=false).
+// Builds a plain 4-wide BOOM v3 with no DIFT tracking logic and no runtime
+// reconfigurability infrastructure.  Intended as the area/LUT baseline against
+// which the other three variants (IFTOnlyBoomConfig, ReconfOnlyBoomConfig,
+// CoreFuzzingConfig) are compared.
+class BaselineBoomConfig extends Config(
+  new boom.v3.common.WithFuzzingBoom(1) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig)
+
+// IFTOnlyBoomConfig — DIFT tracking enabled, runtime reconfigurability disabled.
+// Same BOOM hardware sizing as CoreFuzzingConfig but the quiesce FSM, sizing
+// CSRs, and anti-aliasing SRAMs are all elided.  IFT runs continuously with
+// no pipeline-drain mechanism between experiments.
+class IFTOnlyBoomConfig extends Config(
+  new boom.v3.common.WithIFT ++
+  new boom.v3.common.WithFuzzingBoom(1) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig)
+
+// ReconfOnlyBoomConfig — runtime reconfigurability enabled, DIFT tracking
+// disabled.  Quiesce FSM, sizing CSRs, and (where enabled in Step 7) full_idx_snap
+// SRAMs are present; all IFT state and influencer tracking is elided.
+class ReconfOnlyBoomConfig extends Config(
+  new boom.v3.common.WithReconf ++
+  new boom.v3.common.WithFuzzingBoom(1) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig)
+
+// Checkpoint-restore variant of CoreFuzzingConfig.
+// Layers the same three fragments used by dmiCheckpointingMediumBoom{V3,V4}Config
+// so that `make run-binary LOADARCH=<dir>` can restore spike-generated checkpoints
+// into a Verilator/VCS simulation of the BOOM fuzzing target:
+//   - WithNPMPs(0)           drop PMPs so there's no non-core state to restore
+//   - WithSerialTLTiedOff    disable SerialTL (not used by the DMI restore path)
+//   - WithDMIDTM             expose a clocked DMI debug port that the
+//                            testchip_dtm driver uses to restore arch state
+//   - WithExtMemSize(32 GiB) match the spike -m0x80000000:0x800000000 and QEMU
+//                            -m32G used for checkpoint/BBV collection. The
+//                            Verilator SimDRAM buffer must cover the full
+//                            physical range referenced by mem.elf or loadmem
+//                            segfaults.
+class CoreFuzzingCheckpointConfig extends Config(
+  new freechips.rocketchip.subsystem.WithExtMemSize((BigInt(32) << 30)) ++
+  new chipyard.config.WithNPMPs(0) ++
+  new chipyard.harness.WithSerialTLTiedOff ++
+  new chipyard.config.WithDMIDTM ++
+  new CoreFuzzingConfig)
 
 // FireSim FPGA variant: inherits ALL parameters from CoreFuzzingConfig.
 // Adds WithIFTBridge which exports IFT commit/squash records as tile IO for GoldenGate synthesis.
