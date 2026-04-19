@@ -132,6 +132,18 @@ class CoreFuzzingCheckpointConfig extends Config(
   new chipyard.config.WithDMIDTM ++
   new CoreFuzzingConfig)
 
+// Checkpoint-restore variant of BaselineBoomConfig (no IFT, no Reconf).
+// Same WithFuzzingBoom microarch as CoreFuzzingConfig but plain 4-wide BOOM.
+// WithExtMemSize(32 GiB) is overridden to 16 GiB by WithFireSimConfigTweaks in FireSim
+// but is correct for Verilator+DRAMSim2 which must cover the full 32 GiB spike address space.
+// Use with FireSimBaselineBoomCheckpointConfig for FPGA SimPoint IPC measurement.
+class BaselineBoomCheckpointConfig extends Config(
+  new freechips.rocketchip.subsystem.WithExtMemSize((BigInt(32) << 30)) ++
+  new chipyard.config.WithNPMPs(0) ++
+  new chipyard.harness.WithSerialTLTiedOff ++
+  new chipyard.config.WithDMIDTM ++
+  new BaselineBoomConfig)
+
 // FireSim FPGA variant: inherits ALL parameters from CoreFuzzingConfig.
 // Adds WithIFTBridge which exports IFT commit/squash records as tile IO for GoldenGate synthesis.
 // WithIFTPunchthrough (in AbstractConfig) creates the IFTPort; WithIFTVBridge (firechip) connects it.

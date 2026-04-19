@@ -277,6 +277,16 @@ class FireSimCoreFuzzingIFTConfig extends Config(
   new chipyard.CoreFuzzingFireSimConfig
 )
 
+// Baseline (no IFT, no Reconf) BOOM for SPEC2017 SimPoint checkpoint IPC measurement.
+// WithDMIDTM is in BaselineBoomCheckpointConfig; WithDMIBridge is in WithDefaultFireSimBridges.
+// WithoutBoomCommitLogPrintf suppresses PrintBridge synthesis — use AutoCounter for IPC instead.
+class FireSimBaselineBoomCheckpointConfig extends Config(
+  new WithDefaultFireSimBridges ++
+  new WithFireSimConfigTweaks ++
+  new boom.v3.common.WithoutBoomCommitLogPrintf ++
+  new chipyard.BaselineBoomCheckpointConfig
+)
+
 // WithDefaultMemModel seems to throw an error
 // class FireSimGigaBoomConfig extends Config(
 //   new WithDefaultFireSimBridges ++
