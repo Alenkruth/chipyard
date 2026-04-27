@@ -6,7 +6,7 @@ import chisel3.util.{log2Up}
 
 import org.chipsalliance.cde.config.{Config}
 import freechips.rocketchip.devices.tilelink.{BootROMLocated, PLICKey, CLINTKey}
-import freechips.rocketchip.devices.debug.{Debug, ExportDebug, DebugModuleKey, DMI, JtagDTMKey, JtagDTMConfig}
+import freechips.rocketchip.devices.debug.{Debug, ExportDebug, DebugModuleKey, DebugModuleParams, DMI, JtagDTMKey, JtagDTMConfig}
 import freechips.rocketchip.prci.{AsynchronousCrossing}
 import chipyard.stage.phases.TargetDirKey
 import freechips.rocketchip.subsystem._
@@ -116,6 +116,14 @@ class WithI2C(address: BigInt = 0x10040000) extends Config((site, here, up) => {
 
 class WithNoDebug extends Config((site, here, up) => {
   case DebugModuleKey => None
+})
+
+// Re-enables the debug module after WithNoDebug (which is in WithFireSimConfigTweaks).
+// Sets clockGate=false as required by FireSim's FAME-1 transform.
+// Use at the LEFTMOST (highest-priority) position in FireSim checkpoint configs
+// so it overrides WithNoDebug from WithFireSimConfigTweaks.
+class WithDebugModule extends Config((site, here, up) => {
+  case DebugModuleKey => Some(DebugModuleParams(clockGate = false))
 })
 
 class WithDMIDTM extends Config((site, here, up) => {

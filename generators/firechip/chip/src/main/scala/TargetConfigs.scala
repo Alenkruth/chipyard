@@ -277,14 +277,66 @@ class FireSimCoreFuzzingIFTConfig extends Config(
   new chipyard.CoreFuzzingFireSimConfig
 )
 
+// Full IFT+Reconf BOOM for SPEC2017 SimPoint checkpoint IPC overhead measurement.
+// WithIFTBridge exports IFT commit/squash records via GoldenGate bridge (same as
+// FireSimCoreFuzzingIFTConfig). WithDMIDTM is in CoreFuzzingCheckpointConfig.
+class FireSimCoreFuzzingCheckpointConfig extends Config(
+  new chipyard.config.WithDebugModule ++  // re-enable debug module; WithFireSimConfigTweaks has WithNoDebug
+  new WithDefaultFireSimBridges ++
+  new WithFireSimConfigTweaks ++
+  new boom.v3.common.WithoutBoomCommitLogPrintf ++
+  new boom.v3.common.WithIFTBridge ++
+  new chipyard.CoreFuzzingCheckpointConfig
+)
+
+// IFT+Reconf BOOM for fuzzer runs with DMI pre-execution reconfiguration.
+// Use +reconfig_csrs=<file> to write structure-size/domain CSRs before the hart
+// resumes — guaranteed pointer=0 start, no quiesce protocol needed in the binary.
+// No checkpoint extras (32 GiB mem, no PMPs) — standard bare-metal IFT test runs.
+class FireSimCoreFuzzingIFTDMIConfig extends Config(
+  new chipyard.config.WithDebugModule ++  // re-enable debug module; WithFireSimConfigTweaks has WithNoDebug
+  new WithDefaultFireSimBridges ++
+  new WithFireSimConfigTweaks ++
+  new boom.v3.common.WithoutBoomCommitLogPrintf ++
+  new boom.v3.common.WithIFTBridge ++
+  new chipyard.CoreFuzzingDMIConfig
+)
+
+// IFT-only BOOM for SPEC2017 SimPoint checkpoint IPC overhead measurement.
+class FireSimIFTOnlyBoomCheckpointConfig extends Config(
+  new chipyard.config.WithDebugModule ++  // re-enable debug module; WithFireSimConfigTweaks has WithNoDebug
+  new WithDefaultFireSimBridges ++
+  new WithFireSimConfigTweaks ++
+  new boom.v3.common.WithoutBoomCommitLogPrintf ++
+  new chipyard.IFTOnlyBoomCheckpointConfig
+)
+
+// Reconf-only BOOM for SPEC2017 SimPoint checkpoint IPC overhead measurement.
+// Pair with WithAutoCounter_BaseXilinxAlveoU250Config platform config for minstret/mcycle sampling.
+class FireSimReconfBoomCheckpointConfig extends Config(
+  new chipyard.config.WithDebugModule ++  // re-enable debug module; WithFireSimConfigTweaks has WithNoDebug
+  new WithDefaultFireSimBridges ++
+  new WithFireSimConfigTweaks ++
+  new boom.v3.common.WithoutBoomCommitLogPrintf ++
+  new chipyard.ReconfBoomCheckpointConfig
+)
+
 // Baseline (no IFT, no Reconf) BOOM for SPEC2017 SimPoint checkpoint IPC measurement.
 // WithDMIDTM is in BaselineBoomCheckpointConfig; WithDMIBridge is in WithDefaultFireSimBridges.
 // WithoutBoomCommitLogPrintf suppresses PrintBridge synthesis — use AutoCounter for IPC instead.
 class FireSimBaselineBoomCheckpointConfig extends Config(
+  new chipyard.config.WithDebugModule ++  // re-enable debug module; WithFireSimConfigTweaks has WithNoDebug
   new WithDefaultFireSimBridges ++
   new WithFireSimConfigTweaks ++
   new boom.v3.common.WithoutBoomCommitLogPrintf ++
   new chipyard.BaselineBoomCheckpointConfig
+)
+
+class FireSimBaselineBoomConfig extends Config(
+  new WithDefaultFireSimBridges ++
+  new WithFireSimConfigTweaks ++
+  new boom.v3.common.WithoutBoomCommitLogPrintf ++
+  new chipyard.BaselineBoomConfig
 )
 
 // WithDefaultMemModel seems to throw an error
