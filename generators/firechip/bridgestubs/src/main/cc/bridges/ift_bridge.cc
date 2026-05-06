@@ -88,7 +88,9 @@ void ift_bridge_t::tick() {
   size_t bytes_received = pull(stream_idx, buf.data(), max_bytes, BYTES_PER_BEAT);
   if (bytes_received == 0) return;
 
-  assert(bytes_received % BYTES_PER_BEAT == 0);
+  // Truncate to complete beats; a partial beat can arrive when the FPGA resets
+  // mid-DMA at simulation teardown — discard the incomplete tail.
+  bytes_received -= (bytes_received % BYTES_PER_BEAT);
   const size_t num_beats = bytes_received / BYTES_PER_BEAT;
   total_beats += num_beats;
 

@@ -255,6 +255,10 @@ void blockdev_t::do_write(struct blkdev_request &req) {
 /* Confirm that a write_tracker has been setup for a chunk of data that
  * we have received from the block device widget, to be written to file */
 bool blockdev_t::can_accept(struct blkdev_data &data) {
+  if (data.tag >= _ntags) {
+    fprintf(stderr, "Data tag %d too large.\n", data.tag);
+    abort();
+  }
   return write_trackers[data.tag].size > 0;
 }
 

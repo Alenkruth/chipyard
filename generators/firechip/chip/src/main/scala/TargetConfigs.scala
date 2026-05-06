@@ -270,11 +270,12 @@ class FireSimCoreFuzzingConfig extends Config(
 )
 
 // core fuzzing config with IFTBridge enabled (binary DMA path)
-// Uses CoreFuzzingFireSimConfig which adds WithIFTBridge on top of CoreFuzzingConfig.
 class FireSimCoreFuzzingIFTConfig extends Config(
   new WithDefaultFireSimBridges ++
   new WithFireSimConfigTweaks ++
-  new chipyard.CoreFuzzingFireSimConfig
+  new boom.v3.common.WithoutBoomCommitLogPrintf ++
+  new boom.v3.common.WithIFTBridge ++
+  new chipyard.CoreFuzzingConfig
 )
 
 // Full IFT+Reconf BOOM for SPEC2017 SimPoint checkpoint IPC overhead measurement.
