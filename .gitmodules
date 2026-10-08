@@ -166,3 +166,5 @@
 [submodule "generators/radiance"]
 	path = generators/radiance
 	url = https://github.com/ucb-bar/radiance.git
+[submodule "toolchains/riscv-tools/riscv-isa-sim/"]
+	branch = corefuzzing
