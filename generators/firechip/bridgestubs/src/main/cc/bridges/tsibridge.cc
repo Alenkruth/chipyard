@@ -42,6 +42,11 @@ tsibridge_t::tsibridge_t(simif_t &simif,
   // This * wait_ticks is should be larger than the reset period.
   loading_step_size = fast_fesvr ? 8 : step_size;
 
+  // See the +tsi-wait-ticks handling below: captured during the arg scan, applied after
+  // it, so the TSI-only override wins regardless of plusarg ordering.
+  int tsi_wait_ticks = 0;
+  bool tsi_wait_ticks_set = false;
+
   for (auto &arg : args) {
     if (arg.find("+fesvr-step-size=") == 0) {
       step_size = atoi(arg.c_str() + 17);
@@ -51,6 +56,23 @@ tsibridge_t::tsibridge_t(simif_t &simif,
     }
     if (arg.find("+fesvr-wait-ticks=") == 0) {
       wait_ticks = atoi(arg.c_str() + 18);
+    }
+    // TSI-ONLY override. Needed for checkpoint restore: dmibridge parses the SAME
+    // +fesvr-wait-ticks=, and its wait_ticks gates fesvr->tick() -- the call that drives
+    // the loadarch restore. So raising +fesvr-wait-ticks delays BOTH bridges equally and
+    // they wake together, leaving TSI polling tohost while DMI is still restoring (the
+    // race that yields "bad syscall #0" on pre-restore cold-boot garbage).
+    // Use +fesvr-wait-ticks to keep DMI prompt, and +tsi-wait-ticks to hold HTIF off
+    // until the restore has completed.
+    //
+    // Deferred to AFTER the loop on purpose. These are two independent `if`s in a single
+    // pass, and any given arg matches only one of them -- so applying it here would make
+    // the winner depend on COMMAND-LINE ORDER, not on intent. It happens to work today
+    // only because plusarg_passthrough lists +fesvr-wait-ticks first; reordering the
+    // plusargs would silently reintroduce the restore race.
+    if (arg.find("+tsi-wait-ticks=") == 0) {
+      tsi_wait_ticks = atoi(arg.c_str() + 16);
+      tsi_wait_ticks_set = true;
     }
     if (arg.find(prog_arg) == 0) {
       std::string clean_target_args =
@@ -66,6 +88,12 @@ tsibridge_t::tsibridge_t(simif_t &simif,
     } else {
       args_vec.push_back(arg);
     }
+  }
+
+  // Apply the TSI-only override now that every arg has been seen, so it beats
+  // +fesvr-wait-ticks no matter which order they appeared in.
+  if (tsi_wait_ticks_set) {
+    wait_ticks = tsi_wait_ticks;
   }
 
   int argc_count = args_vec.size() - 1;
