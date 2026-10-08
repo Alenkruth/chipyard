@@ -61,6 +61,14 @@ private:
   // state and drops xacts
   uint32_t wait_ticks;
 
+  // One-shot post-deadlock trap-CSR dump. When dump_at_cycle != 0, at the first
+  // productive tick whose estimated target cycle (productive_ticks * step_size)
+  // reaches dump_at_cycle, halt hart 0 and print the machine trap CSRs (once).
+  // Set past the deadlock so the halt cannot perturb the pre-deadlock timing.
+  uint64_t dump_at_cycle = 0;
+  uint64_t productive_ticks = 0;
+  bool trap_dumped = false;
+
   // Arguments passed to firesim_dtm.
   char **dmi_argv = nullptr;
   int dmi_argc;

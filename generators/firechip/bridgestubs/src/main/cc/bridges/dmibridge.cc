@@ -52,6 +52,9 @@ dmibridge_t::dmibridge_t(simif_t &simif,
     if (arg.find("+fesvr-wait-ticks=") == 0) {
       wait_ticks = atoi(arg.c_str() + 18);
     }
+    if (arg.find("+dump-trap-at-cycle=") == 0) {
+      dump_at_cycle = strtoull(arg.c_str() + 20, nullptr, 0);
+    }
     if (arg.find(prog_arg) == 0) {
       std::string clean_target_args =
           const_cast<char *>(arg.c_str()) + prog_arg.length();
@@ -103,6 +106,8 @@ void dmibridge_t::init() {
   // built here, as the bridge constructor may be invoked from a thread other
   // than the one it will run on later in meta-simulations.
   fesvr = new firesim_dtm_t(dmi_argc, dmi_argv, has_mem);
+  if (dump_at_cycle != 0)
+    fesvr->dump_enabled = true; // reset() will do the halt+read at the trigger cycle
   if (fast_fesvr) {
     printf("dmibridge_t::init set FESVR step-size to %" PRIu32 " initially\n",
            loading_step_size);
@@ -192,6 +197,29 @@ void dmibridge_t::tick() {
     return;
   }
 
+  // One-shot post-deadlock trap-CSR dump (see dmibridge.h). Fires once, well
+  // after the deadlock, so the debug halt cannot perturb the timing-sensitive
+  // bug. dump_trap_csrs() leaves hart 0 halted until +max-cycles. productive_ticks
+  // advances step_size target cycles each, so productive_ticks*step_size == the
+  // elapsed target cycle (the go() in the terminate() branch below keeps it live).
+  const bool dump_pending = (dump_at_cycle != 0 && !trap_dumped);
+  if (dump_pending) {
+    productive_ticks += 1;
+    // Heartbeat: proves whether the go()-keepalive below actually advances the
+    // counter (fix works) vs freezes it after loadarch (fix failed) -- so a run
+    // that does not dump is still diagnostic instead of silent.
+    if (productive_ticks % 200000 == 0)
+      printf("[dump-trap-csrs] heartbeat productive_ticks=%llu est_cycle=%llu\n",
+             (unsigned long long)productive_ticks,
+             (unsigned long long)(productive_ticks * (uint64_t)step_size));
+    if (productive_ticks * (uint64_t)step_size >= dump_at_cycle) {
+      // Signal the target coroutine (testchip_dtm_t::reset) to do the halt+read.
+      // Calling dump_trap_csrs() from here (host context) crashes context_t::switch_to.
+      fesvr->dump_requested = true;
+      trap_dumped = true;
+    }
+  }
+
   // req from the host, resp from the target
   // in(to) the target, out from the target
 
@@ -239,6 +267,13 @@ void dmibridge_t::tick() {
     }
 
     // Move forward step_size iterations
+    go();
+  } else if (dump_at_cycle != 0) {
+    // A checkpoint FESVR reports done() right after loadarch, which normally
+    // stops go() and idles the DMI channel -- freezing productive_ticks and
+    // leaving dump_trap_csrs() unable to reach the hart. When a trap dump is
+    // requested, keep the channel advancing (exactly as the parked TSI bridge
+    // does all run long) so the counter tracks cycles and the halt can proceed.
     go();
   }
 }

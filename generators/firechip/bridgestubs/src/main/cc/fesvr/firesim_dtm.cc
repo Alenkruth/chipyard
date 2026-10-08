@@ -20,10 +20,41 @@ firesim_dtm_t::firesim_dtm_t(int argc, char **argv, bool can_have_loadmem)
 }
 
 void firesim_dtm_t::idle() {
+  // Post-deadlock trap-CSR dump. The bridge sets dump_requested at the trigger
+  // cycle; do the halt+read HERE, in the FESVR (host) context where loadarch's
+  // identical DMI works -- its abstract commands yield via switch_to_target(),
+  // which is valid from this context but not from the bridge tick() (target ctx).
+  if (dump_enabled && dump_requested) {
+    dump_trap_csrs();
+    dump_enabled = false; // one-shot
+  }
   is_busy = false;
   for (size_t i = 0; i < idle_counts; i++)
     switch_to_target();
   is_busy = true;
+}
+
+// [reconf-fix] Halt hart 0 and dump the machine/supervisor trap CSRs at full
+// width. Called from idle() (host/FESVR context) where the DMI abstract commands
+// work. Leaves hart 0 halted (per dmibridge contract). NOTE: `printf` (not the
+// file-local no-op `fprintf`) so the dump actually prints.
+void firesim_dtm_t::dump_trap_csrs() {
+  halt(0);
+  printf("==== [dump-trap-csrs] hart 0 halted; trap state ====\n");
+  printf("  mstatus =0x%016" PRIx64 "\n", (uint64_t)loadarch_read_csr64(0x300));
+  printf("  mtvec   =0x%016" PRIx64 "\n", (uint64_t)loadarch_read_csr64(0x305));
+  printf("  mepc    =0x%016" PRIx64 "\n", (uint64_t)loadarch_read_csr64(0x341));
+  printf("  mcause  =0x%016" PRIx64 "\n", (uint64_t)loadarch_read_csr64(0x342));
+  printf("  mtval   =0x%016" PRIx64 "\n", (uint64_t)loadarch_read_csr64(0x343));
+  printf("  mip     =0x%016" PRIx64 "\n", (uint64_t)loadarch_read_csr64(0x344));
+  printf("  mie     =0x%016" PRIx64 "\n", (uint64_t)loadarch_read_csr64(0x304));
+  printf("  mscratch=0x%016" PRIx64 "\n", (uint64_t)loadarch_read_csr64(0x340));
+  printf("  sepc    =0x%016" PRIx64 "\n", (uint64_t)loadarch_read_csr64(0x141));
+  printf("  scause  =0x%016" PRIx64 "\n", (uint64_t)loadarch_read_csr64(0x142));
+  printf("  stval   =0x%016" PRIx64 "\n", (uint64_t)loadarch_read_csr64(0x143));
+  printf("  satp    =0x%016" PRIx64 "\n", (uint64_t)loadarch_read_csr64(0x180));
+  printf("==== [dump-trap-csrs] hart 0 left halted ====\n");
+  fflush(stdout);
 }
 
 void firesim_dtm_t::send_loadmem_word(uint32_t word) {

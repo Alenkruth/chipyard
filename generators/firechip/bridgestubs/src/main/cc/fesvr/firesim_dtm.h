@@ -27,6 +27,11 @@ public:
 
   void send_loadmem_word(uint32_t word);
 
+  // [reconf-fix] Post-deadlock trap-CSR dump (dmibridge +dump-at-cycle). Public
+  // so dmibridge_t sets them via fesvr->. One-shot: idle() dumps when both set.
+  bool dump_enabled = false;
+  bool dump_requested = false;
+
 protected:
   void idle() override;
 
@@ -48,6 +53,8 @@ protected:
 
 private:
   size_t idle_counts;
+  // Halt hart 0 and print the machine/supervisor trap CSRs (leaves it halted).
+  void dump_trap_csrs();
   bool is_busy;
   // program load has completed in the host thread (i.e. all fesvr xacts for
   // program load have been sent by fesvr)
