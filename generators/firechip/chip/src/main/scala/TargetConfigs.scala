@@ -303,6 +303,33 @@ class FireSimCoreFuzzingIFTDMIConfig extends Config(
   new chipyard.CoreFuzzingDMIConfig
 )
 
+// Lean variant of FireSimCoreFuzzingIFTDMIConfig: IDENTICAL core/cache/IFT/reconf
+// hardware, with TracerV and the block device removed.  Both are dead weight in this
+// bitstream -- IFT records leave over the IFT bridge (WithIFTBridge), the runtime
+// config pins TracerV to enable:no/selector:0, and bare-metal IFT attack tests never
+// touch a disk.
+//
+// Measured on the failed 2026-08-30 placed checkpoint (report_utilization -hierarchical):
+//   TracerVBridgeModule_0                          382 LUTs
+//   TRACERVBRIDGEMODULE_0_to_cpu_stream/Queue_53 10,639 LUTs   <- the queue dwarfs the bridge
+//   BlockDevBridgeModule_0                       1,010 LUTs
+//   total ~11.0k of 1,070,822 = 1.1%
+// Small on its own, but that build died in ROUTING at 86.8% CLB occupancy with WNS
+// still POSITIVE (+0.134) until congestion detours wrecked it, so LUTs that buy
+// nothing are worth giving back.
+//
+// WithNoTraceIO is what actually removes the hardware, not the bridge binder.  It sets
+// core.trace=false, so system.traceIO is None, WithTraceIOPunchthrough punches no
+// TracePort, and WithTracerVBridge (a HarnessBinder keyed on TracePort) never matches.
+// Dropping the binder alone would leave the port dangling and keep the core-side trace
+// logic.  Same shape for the block device: WithBlockDevice(false) sets BlockDeviceKey
+// to None so system.bdev is empty and no BlockDevicePort exists to bind.
+class FireSimCoreFuzzingIFTDMILeanConfig extends Config(
+  new chipyard.config.WithNoTraceIO ++
+  new testchipip.iceblk.WithBlockDevice(false) ++
+  new FireSimCoreFuzzingIFTDMIConfig
+)
+
 // IFT-only BOOM for SPEC2017 SimPoint checkpoint IPC overhead measurement.
 class FireSimIFTOnlyBoomCheckpointConfig extends Config(
   new chipyard.config.WithDebugModule ++  // re-enable debug module; WithFireSimConfigTweaks has WithNoDebug
@@ -314,11 +341,23 @@ class FireSimIFTOnlyBoomCheckpointConfig extends Config(
 
 // Reconf-only BOOM for SPEC2017 SimPoint checkpoint IPC overhead measurement.
 // Pair with WithAutoCounter_BaseXilinxAlveoU250Config platform config for minstret/mcycle sampling.
+// WithSV57: spike checkpoints are captured with satp MODE=10 (Sv57); an Sv39 core silently drops
+// the satp write and resumes with paging off, so the restore faults. pgLevels=5 is REQUIRED here.
 class FireSimReconfBoomCheckpointConfig extends Config(
+  new chipyard.config.WithSV57 ++         // 5-level paging: mandatory for Sv57 checkpoint restore
   new chipyard.config.WithDebugModule ++  // re-enable debug module; WithFireSimConfigTweaks has WithNoDebug
   new WithDefaultFireSimBridges ++
   new WithFireSimConfigTweaks ++
   new boom.v3.common.WithoutBoomCommitLogPrintf ++
+  // [2026-08-13] Gate the remaining debug printfs OUT of the checkpoint/reconf bitstream.
+  // enableCfDebugPrintf and enableMemtracePrintf both default TRUE, so without these the
+  // [FLUSH]/[SPECULATIVE] and LSU "MT ..." dumps are synthesized through the PrintBridge --
+  // costing FMR and timing headroom on a build that measures IPC via AutoCounter and needs
+  // neither.  Both gates are Scala `if`s, so the printf logic and its argument mux cones are
+  // never emitted (no area impact).  Deliberately NOT applied to the corefuzzing configs,
+  // which still want these prints.
+  new boom.v3.common.WithoutCfDebugPrintf ++
+  new boom.v3.common.WithoutMemtracePrintf ++
   new chipyard.ReconfBoomCheckpointConfig
 )
 
@@ -326,6 +365,12 @@ class FireSimReconfBoomCheckpointConfig extends Config(
 // WithDMIDTM is in BaselineBoomCheckpointConfig; WithDMIBridge is in WithDefaultFireSimBridges.
 // WithoutBoomCommitLogPrintf suppresses PrintBridge synthesis — use AutoCounter for IPC instead.
 class FireSimBaselineBoomCheckpointConfig extends Config(
+  // WithSV57 is MANDATORY here for the same reason as the Reconf config above: this is the
+  // baseline IPC control, so it must restore the SAME spike checkpoints (satp MODE=10). At
+  // pgLevels=3 the satp write is silently dropped (rocket CSR.scala:1227,1357 —
+  // satp_valid_modes={0,8}, no trap on an invalid mode), paging never turns on, and the hart
+  // faults immediately with no error message. Omitting this yields a control that cannot run.
+  new chipyard.config.WithSV57 ++
   new chipyard.config.WithDebugModule ++  // re-enable debug module; WithFireSimConfigTweaks has WithNoDebug
   new WithDefaultFireSimBridges ++
   new WithFireSimConfigTweaks ++
@@ -333,11 +378,49 @@ class FireSimBaselineBoomCheckpointConfig extends Config(
   new chipyard.BaselineBoomCheckpointConfig
 )
 
+// ----------------------------------------------------------------------------
+// 32 GiB checkpoint variants for the Alveo U250 built with 2 DDR4 host channels
+// (HostMemNumChannels=2 in XilinxAlveoU250Config). The leftmost WithExtMemSize
+// overrides the inner 16 GiB; nMemoryChannels stays 1 so a single 32 GiB FASED
+// region spans both host channels via FPGATop address routing (Option A).
+// Generate checkpoints with spike -m0x80000000:0x800000000.
+// ----------------------------------------------------------------------------
+class FireSimCoreFuzzingCheckpoint32GBConfig extends Config(
+  new freechips.rocketchip.subsystem.WithExtMemSize((BigInt(32) << 30)) ++
+  new FireSimCoreFuzzingCheckpointConfig
+)
+
+class FireSimIFTOnlyBoomCheckpoint32GBConfig extends Config(
+  new freechips.rocketchip.subsystem.WithExtMemSize((BigInt(32) << 30)) ++
+  new FireSimIFTOnlyBoomCheckpointConfig
+)
+
+class FireSimReconfBoomCheckpoint32GBConfig extends Config(
+  new freechips.rocketchip.subsystem.WithExtMemSize((BigInt(32) << 30)) ++
+  new FireSimReconfBoomCheckpointConfig
+)
+
+class FireSimBaselineBoomCheckpoint32GBConfig extends Config(
+  new freechips.rocketchip.subsystem.WithExtMemSize((BigInt(32) << 30)) ++
+  new FireSimBaselineBoomCheckpointConfig
+)
+
 class FireSimBaselineBoomConfig extends Config(
   new WithDefaultFireSimBridges ++
   new WithFireSimConfigTweaks ++
   new boom.v3.common.WithoutBoomCommitLogPrintf ++
   new chipyard.BaselineBoomConfig
+)
+
+// 32 GiB NORMAL-boot baseline BOOM (no checkpoint mods: SerialTL/TSI stays active,
+// so it boots Linux/Ubuntu the usual way). Pairs with the 2-DDR4-channel Alveo U250
+// build (HostMemNumChannels=2). The leftmost WithExtMemSize(32 GiB) overrides the
+// 16 GiB in WithFireSimConfigTweaks; nMemoryChannels stays 1, so a single 32 GiB
+// FASED region spans both host channels. Used to sanity-check the larger memory by
+// booting Ubuntu and stressing >16 GiB (the DTB auto-reports 32 GiB to Linux).
+class FireSimBaselineBoom32GBConfig extends Config(
+  new freechips.rocketchip.subsystem.WithExtMemSize((BigInt(32) << 30)) ++
+  new FireSimBaselineBoomConfig
 )
 
 // WithDefaultMemModel seems to throw an error
