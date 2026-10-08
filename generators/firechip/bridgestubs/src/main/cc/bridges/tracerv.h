@@ -53,6 +53,7 @@ public:
                         FILE *tracefile,
                         std::function<void(uint64_t, uint64_t)> addInstruction,
                         int max_core_ipc,
+                        int pc_bits,
                         bool human_readable,
                         bool test_output,
                         bool fireperf);
@@ -104,6 +105,13 @@ private:
 public:
   void flush();
   static constexpr uint64_t valid_mask = (1ULL << 63); // valid bit is 64th bit
+  // trace.iaddr width (vaddrBitsExtended). Only used by the fireperf path to
+  // sign-extend the PC. 40 = Sv39 (previous hardcoded behaviour); 58 = Sv57.
+  // Defaults to 58 because every checkpoint config here is built WithSV57, and the
+  // RTL packs a 58-bit iaddr (TracerVBridge.scala:155). Leaving the default at 40
+  // silently mangles any PC >= 2^39 under +fireperf; override with +tracerv-pc-bits=40
+  // when running an actual Sv39 bitstream.
+  int pc_bits = 58;
 };
 
 #endif // __TRACERV_H

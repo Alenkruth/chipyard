@@ -67,6 +67,16 @@ tracerv_t::tracerv_t(simif_t &sim,
       char *str = const_cast<char *>(arg.c_str()) + traceselect_arg.length();
       this->trigger_selector = atol(str);
     }
+    // +tracerv-pc-bits=<vaddrBitsExtended>: width of trace.iaddr, used ONLY by the
+    // fireperf path to sign-extend the PC. The RTL sends Cat(valid, iaddr.pad(63)),
+    // so the driver cannot infer the real width; it was hardcoded to 40 (Sv39) via
+    // a "<< 24 >> 24". On an Sv57 build iaddr is 58 bits, so that hardcode destroys
+    // bits 57:40 and mis-signs every kernel-half PC. Default 40 preserves the
+    // previous Sv39 behaviour; pass 58 on Sv57 builds.
+    // (human_readable/binary paths are width-independent and unaffected.)
+    if (arg.find("+tracerv-pc-bits=") == 0) {
+      this->pc_bits = atoi(arg.c_str() + strlen("+tracerv-pc-bits="));
+    }
     // These next two arguments are overloaded to provide trigger start and
     // stop condition information based on setting of the +trace-select
     if (arg.find(tracestart_arg) == 0) {
@@ -232,6 +242,7 @@ size_t tracerv_t::process_tokens(int num_beats, int minimum_batch_beats) {
               tracefile,
               addInstruction,
               max_core_ipc,
+              pc_bits,
               human_readable,
               test_output,
               fireperf);
@@ -245,6 +256,7 @@ void tracerv_t::serialize(
     FILE *tracefile,
     std::function<void(uint64_t, uint64_t)> addInstruction,
     const int max_core_ipc,
+    const int pc_bits,
     const bool human_readable,
     const bool test_output,
     const bool fireperf) {
@@ -280,8 +292,10 @@ void tracerv_t::serialize(
 
       for (int q = 0; q < max_consider; q++) {
         if (OUTBUF[i + 1 + q] & valid_mask) {
+          // sign-extend from bit (pc_bits-1); shift 24 == pc_bits 40 (Sv39).
+          const int sx = 64 - pc_bits;
           uint64_t iaddr =
-              (uint64_t)((((int64_t)(OUTBUF[i + 1 + q])) << 24) >> 24);
+              (uint64_t)((((int64_t)(OUTBUF[i + 1 + q])) << sx) >> sx);
           addInstruction(iaddr, cycle_internal);
 #ifdef FIREPERF_LOGGER
           fprintf(tracefile, "%016llx", iaddr);
