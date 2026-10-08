@@ -48,7 +48,8 @@ private:
   ClockInfo    clock_info;
 
   std::string  outfilename;
-  FILE        *outfile = nullptr;
+  FILE        *outfile    = nullptr;
+  bool         drain_only = false;
 
   // Statistics
   uint64_t     total_records = 0;

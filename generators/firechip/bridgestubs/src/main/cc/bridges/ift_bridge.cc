@@ -15,15 +15,27 @@ char ift_bridge_t::KIND;
 //   bits[4:2]     priv
 //   bits[44:5]    pc[39:0]
 //   bits[76:45]   insn[31:0]
-//   bits[84:77]   flags (domain, spec, atk, s_acc, s_prop, s_tx, src_tainted, infl_ovf)
-//   bits[100:85]  op_count[15:0]            (16b = uopIDCounterWidthCF)
-//   bits[102:101] spec_branch_is_atk, spec_branch_is_secret
-//   bits[118:103] spec_branch_op_id[15:0]   (16b = uopIDCounterWidthCF)
-//   bits[119]     single_step
-//   bits[143:120] fu_bitmap[23:0]
-//   bits[227:144] influencer[0..2]          (3 × 28b each)
-//     Per slot: valid(1)+op_count(16)+infl_type(5)+is_atk(1)+is_secret(1)+deny_count(4)
-//   bits[255:228] reserved/zero
+//   bits[83:77]   flags (domain, spec, atk, s_acc, s_prop, s_tx, src_tainted)
+//   bits[85:84]   infl_dropped              (2b saturating COUNT of discarded influencers;
+//                                            was a 1b sticky infl_ovf flag)
+//   bits[101:86]  op_count[15:0]            (16b = uopIDCounterWidthCF)
+//   bits[103:102] spec_branch_is_atk, spec_branch_is_secret
+//   bits[119:104] spec_branch_op_id[15:0]   (16b = uopIDCounterWidthCF)
+//   bits[120]     single_step
+//   bits[144:121] fu_bitmap[23:0]
+//   bits[147:145] cntd_deny_count           (3b Log2Bucket: issue-port denial cycles)
+//   bits[150:148] stall_cycles_rob          (3b Log2Bucket: ROB-full dispatch stall)
+//   bits[153:151] stall_cycles_stq          (3b Log2Bucket: STQ head-of-line residency)
+//   bits[217:154] influencer[0..3]          (4 × 16b each)
+//     Per slot: valid(1)+op_count(8)+infl_type(5)+is_atk(1)+is_secret(1)
+//     op_count holds only the LOW 8 bits of the producer's id; software reconstructs
+//     it against this record's own op_count.
+//   bits[255:218] reserved/zero
+//
+// NOTE: this driver does not decode any of the above -- it extracts only event_type
+// (bits[1:0]) and copies the remaining 254 bits opaquely, so a layout change needs no
+// code change here.  The decoders that DO care are IFTBridgeIO.scala (packer) and
+// base-attacks/fuzzer/decode_ift_bridge.py (unpacker); keep all three in lockstep.
 struct ift_record_t {
   uint64_t words[4];  // 4 × 64b = 256b
 };
@@ -57,8 +69,10 @@ ift_bridge_t::ift_bridge_t(simif_t &sim,
       outfilename = arg.substr(ift_out_arg.size());
     }
   }
-  if (outfilename.empty()) {
-    outfilename = "ift_bridge.bin";
+  // If no +ift-out= is provided, drain the stream without writing.
+  drain_only = outfilename.empty();
+  if (drain_only) {
+    fprintf(stdout, "[IFTBridge] no +ift-out= provided — draining stream without recording\n");
   }
 }
 
@@ -67,6 +81,7 @@ ift_bridge_t::~ift_bridge_t() {
 }
 
 void ift_bridge_t::init() {
+  if (drain_only) return;
   outfile = fopen(outfilename.c_str(), "wb");
   if (!outfile) {
     fprintf(stderr, "[IFTBridge] ERROR: cannot open output file '%s'\n",
@@ -94,7 +109,7 @@ void ift_bridge_t::tick() {
   const size_t num_beats = bytes_received / BYTES_PER_BEAT;
   total_beats += num_beats;
 
-  if (!outfile) return;
+  if (drain_only || !outfile) return;
 
   for (size_t i = 0; i < num_beats; ++i) {
     const uint8_t *beat = buf.data() + i * BYTES_PER_BEAT;
@@ -115,6 +130,9 @@ void ift_bridge_t::flush() {
 
 void ift_bridge_t::finish() {
   flush();
-  fprintf(stderr, "[IFTBridge] Wrote %" PRIu64 " records (%" PRIu64 " beats) to %s\n",
-          total_records, total_beats, outfilename.c_str());
+  if (drain_only)
+    fprintf(stderr, "[IFTBridge] drain-only mode — no records written\n");
+  else
+    fprintf(stderr, "[IFTBridge] Wrote %" PRIu64 " records (%" PRIu64 " beats) to %s\n",
+            total_records, total_beats, outfilename.c_str());
 }
