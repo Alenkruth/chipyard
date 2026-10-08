@@ -170,3 +170,21 @@ class WithSV48 extends Config((site, here, up) => {
       tp.tileParams.core.copy(pgLevels = 4)))
   }
 })
+
+// Use SV57 (5-level page tables). REQUIRED to restore spike checkpoints, which are
+// captured with satp MODE=10 (Sv57, spike's RV64 default). On an Sv39 core the mode-10
+// satp write is silently dropped (rocket/CSR.scala satp_valid_modes) -> paging stays off
+// -> restore faults. pgLevels=5 -> satp_valid_modes = {0,8,9,10}. 5 is the max for RV64
+// (pgLevels=6 fails maxHVAddrBits>xLen). Do NOT use rocket's WithSV48/WithPgLevels here --
+// those are RocketCoreConfig and silently ignore BOOM tiles.
+class WithSV57 extends Config((site, here, up) => {
+  case TilesLocated(loc) => up(TilesLocated(loc), site) map {
+    case tp: RocketTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(core =
+      tp.tileParams.core.copy(pgLevels = 5)))
+    case tp: boom.v3.common.BoomTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(core =
+      tp.tileParams.core.copy(pgLevels = 5)))
+    case tp: boom.v4.common.BoomTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(core =
+      tp.tileParams.core.copy(pgLevels = 5)))
+    case other => other
+  }
+})
