@@ -33,3 +33,5 @@ project/project/
 .classpath_cache/
 .vscode/
 tests/build/
+generators/boom-chipyard/
+generators/rocket-chip-chipyard/
