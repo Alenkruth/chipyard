@@ -83,6 +83,7 @@ add_executable(spiflashwrite spiflashwrite.c)
 add_executable(fft fft.c)
 add_executable(gcd gcd.c)
 add_executable(hello hello.c)
+add_executable(memtest memtest.c)
 add_executable(mt-hello mt-hello.c)
 add_executable(symmetric symmetric.c)
 
