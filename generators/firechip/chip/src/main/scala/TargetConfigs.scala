@@ -300,7 +300,11 @@ class FireSimCoreFuzzingIFTDMIConfig extends Config(
   new WithFireSimConfigTweaks ++
   new boom.v3.common.WithoutBoomCommitLogPrintf ++
   new boom.v3.common.WithIFTBridge ++
-  new chipyard.CoreFuzzingDMIConfig
+  // [Task 2.10g] CoreFuzzingDMIConfig's hardware fragments, listed directly: that config now also
+  // sets the Verilator-only IFT oracle mode (and a Verilator harness serial-TL tie-off), which no
+  // FireSim config may inherit.
+  new chipyard.config.WithDMIDTM ++
+  new chipyard.CoreFuzzingConfig
 )
 
 // Lean variant of FireSimCoreFuzzingIFTDMIConfig: IDENTICAL core/cache/IFT/reconf

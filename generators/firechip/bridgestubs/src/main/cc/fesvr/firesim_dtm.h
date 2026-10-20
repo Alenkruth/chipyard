@@ -27,6 +27,14 @@ public:
 
   void send_loadmem_word(uint32_t word);
 
+  // +dmi-no-htif: the DMI fesvr loads nothing and never touches tohost/fromhost.
+  // It only brings up the Debug Module, applies +reconfig_csrs (hart halted in the
+  // bootrom), then releases the TSI fesvr to start hart 0 (firesim_dmi_preload_done).
+  // TSI owns the ELF load, msip and all HTIF. htif_parked() lets dmibridge stop
+  // issuing DMI requests once that is done (unless a trap dump is pending).
+  bool htif_parked() { return no_htif && preload_done; }
+  void load_program() override;
+
   // [reconf-fix] Post-deadlock trap-CSR dump (dmibridge +dump-at-cycle). Public
   // so dmibridge_t sets them via fesvr->. One-shot: idle() dumps when both set.
   bool dump_enabled = false;
@@ -53,6 +61,12 @@ protected:
 
 private:
   size_t idle_counts;
+  bool no_htif = false;
+  bool preload_done = false;
+  // +dump-mem=<addr>: the trap dump also reads the two dwords at addr, addr+8 as
+  // the HART sees them (e.g. tohost/fromhost), to compare with what TSI sees.
+  uint64_t dump_mem_addr = 0;
+  uint64_t dump_read_mem64(uint64_t addr);
   // Halt hart 0 and print the machine/supervisor trap CSRs (leaves it halted).
   void dump_trap_csrs();
   bool is_busy;

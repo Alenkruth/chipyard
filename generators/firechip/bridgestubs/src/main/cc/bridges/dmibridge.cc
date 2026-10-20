@@ -197,6 +197,14 @@ void dmibridge_t::tick() {
     return;
   }
 
+  // +dmi-no-htif: once the preload (reconfig) is done, issue no more DMI requests at
+  // all -- the same quiet state as a wait-ticks park. Not taken when a trap dump is
+  // requested: the dump needs the DMI fesvr to keep running its idle loop.
+  if (fesvr->htif_parked() && dump_at_cycle == 0) {
+    go();
+    return;
+  }
+
   // One-shot post-deadlock trap-CSR dump (see dmibridge.h). Fires once, well
   // after the deadlock, so the debug halt cannot perturb the timing-sensitive
   // bug. dump_trap_csrs() leaves hart 0 halted until +max-cycles. productive_ticks
@@ -279,4 +287,9 @@ void dmibridge_t::tick() {
 }
 
 bool dmibridge_t::terminate() { return fesvr->done(); }
+
+void dmibridge_t::drain_keepalive() {
+  if (read(mmio_addrs.done))
+    go();
+}
 int dmibridge_t::exit_code() { return fesvr->exit_code(); }

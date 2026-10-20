@@ -5,6 +5,10 @@
 
 #define fprintf(stdout, fmt, ...) (0)
 
+// Set by firesim_dtm_t (DMI fesvr, +dmi-no-htif) when its preload is done. Defined
+// here because firesim_tsi.cc is linked into every driver; firesim_dtm.cc is not.
+bool firesim_dmi_preload_done = false;
+
 firesim_tsi_t::firesim_tsi_t(int argc, char **argv, bool can_have_loadmem)
     : testchip_tsi_t(argc, argv, can_have_loadmem), is_busy(false),
       is_loaded_in_host(false), is_loaded_in_target(false) {
@@ -13,6 +17,8 @@ firesim_tsi_t::firesim_tsi_t(int argc, char **argv, bool can_have_loadmem)
   for (auto &arg : args) {
     if (arg.find("+idle-counts=") == 0)
       idle_counts = atoi(arg.c_str() + 13);
+    if (arg == "+dmi-no-htif")
+      wait_for_dmi = true;
   }
 
   // always use loadmem if the target supports it
@@ -75,6 +81,16 @@ void firesim_tsi_t::reset() {
   is_loaded_in_host = true;
   while (!is_loaded_in_target)
     switch_to_target();
+  if (wait_for_dmi) {
+    // ELF is in DRAM; hart 0 is still in the bootrom. Start it only after the DMI
+    // fesvr has applied +reconfig_csrs, so reconfiguration precedes the program.
+    printf("[dmi-no-htif] TSI: ELF loaded; waiting for DMI preload before msip\n");
+    fflush(stdout);
+    while (!firesim_dmi_preload_done)
+      switch_to_target();
+    printf("[dmi-no-htif] TSI: starting hart 0 (msip)\n");
+    fflush(stdout);
+  }
   fprintf(
       stdout,
       "firesim_tsi_t::reset done loading program. sending reset signal(s)\n");

@@ -258,4 +258,9 @@ void tsibridge_t::tick() {
 }
 
 bool tsibridge_t::terminate() { return fesvr->done(); }
+
+void tsibridge_t::drain_keepalive() {
+  if (read(mmio_addrs.done))
+    go();
+}
 int tsibridge_t::exit_code() { return fesvr->exit_code(); }

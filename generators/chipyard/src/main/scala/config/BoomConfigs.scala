@@ -243,9 +243,32 @@ class BaselineBoomCheckpointSv57Config extends Config(
 // testchip_dtm can halt the hart, write structure-size/domain CSRs via
 // +reconfig_csrs=<file>, and resume before any workload instructions execute.
 // Unlike CoreFuzzingCheckpointConfig this omits the checkpoint-specific extras
-// (32 GiB ext mem, WithNPMPs(0), WithSerialTLTiedOff) — not needed for
-// bare-metal IFT test runs where memory stays at the default 2 GiB range.
+// (32 GiB ext mem, WithNPMPs(0)), which are not needed for bare-metal IFT test
+// runs where memory stays at the default 2 GiB range.
+//
+// [Task 2.10f round 2, r33 root cause] WithSerialTLTiedOff is required. Without it the
+// harness also attaches SimTSI to the serial TL port, and the TSI front end loads the
+// same ELF a second time over serial TL while the DMI-loaded program already runs. Its
+// .bss zero fill (about 8 bytes per 205 core cycles) then overwrites data the program
+// has written. See claude-artifacts/ift-overhaul/bug-reports/task-2.10f-r33.md.
+// Stock dmiRocketConfig and every other DMI config in this file tie the port off too.
+//
+// [Task 2.10g, ruling 61] WithIFTOracle: Verilator/OOC-only IFT oracle mode. The tile keeps
+// what a FireSim IFT build keeps (IFT record outputs, TracerV trace port), so the BoomTile
+// OOC counts the FPGA logic. FireSim configs must not inherit this config: they list
+// WithDMIDTM ++ CoreFuzzingConfig instead (BoomCoreParams also rejects oracle + bridge).
+// [NOLOG 2026-10-13, owner ruling 122/123] Exit-code-only runs (ISA tests, attacks judged by exit
+// code): same hardware as CoreFuzzingDMIConfig with the commit-log and CF debug printfs compiled
+// out, so +verbose prints only the harness PASSED/FAILED lines. Build non-debug:
+//   make -j CONFIG=CoreFuzzingDMINoLogConfig VERILATOR_THREADS=20 NUMACTL=1
+class CoreFuzzingDMINoLogConfig extends Config(
+  new boom.v3.common.WithoutBoomCommitLogPrintf ++
+  new boom.v3.common.WithoutCfDebugPrintf ++
+  new CoreFuzzingDMIConfig)
+
 class CoreFuzzingDMIConfig extends Config(
+  new boom.v3.common.WithIFTOracle ++
+  new chipyard.harness.WithSerialTLTiedOff ++   // one program loader only (DMI); see above
   new chipyard.config.WithDMIDTM ++
   new CoreFuzzingConfig)
 

@@ -38,6 +38,13 @@ public:
   void tick()   override;
   void finish() override;
 
+  // [CHUNKDRAIN] patch 54 (firesim_top.cc end-of-run drain).  In discard mode tick()
+  // still pulls the stream (so the target is never back-pressured) but writes nothing;
+  // the beats are counted in discarded_beats, not total_beats.
+  void set_discard(bool on) { discard = on; }
+  uint64_t beats_seen() const { return total_beats + discarded_beats; }
+  uint64_t discarded() const { return discarded_beats; }
+
 private:
   void flush();
 
@@ -51,7 +58,19 @@ private:
   FILE        *outfile    = nullptr;
   bool         drain_only = false;
 
+  // [DRVXDMA] Page-aligned, persistent DMA destination buffer (stream_depth beats,
+  // rounded up to whole pages).  It MUST be page-aligned: on the XDMA (U250) flow a
+  // pull whose destination crosses a host page boundary at an offset that is not a
+  // multiple of the 64-byte beat is split by the XDMA driver into two descriptors that
+  // together read one beat more than the FPGA queue holds (FireSim issue #208).  The
+  // read then never completes, pread() fails after c2h_timeout (10 s), and the stream
+  // is left mis-framed.  See tick() and cpu_managed_stream.cc.
+  uint8_t     *dma_buf       = nullptr;
+  size_t       dma_buf_bytes = 0;
+
   // Statistics
   uint64_t     total_records = 0;
   uint64_t     total_beats   = 0;
+  bool         discard         = false;
+  uint64_t     discarded_beats = 0;
 };

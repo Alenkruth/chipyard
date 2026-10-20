@@ -42,6 +42,12 @@ public:
   virtual bool terminate();
   virtual int exit_code();
 
+  // [CHUNKDRAIN] patch 54: end-of-run drain only (firesim_top.cc).  Re-arms the token
+  // gate (go()) when the previous grant is used up, WITHOUT calling the fesvr: after
+  // the fesvr finished, tick() no longer calls go(), so the target would stall and the
+  // leftover PeekPoke step could never drain.  Plain register read + write; never blocks.
+  void drain_keepalive();
+
 private:
   const DMIBRIDGEMODULE_struct mmio_addrs;
   loadmem_t &loadmem_widget;

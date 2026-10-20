@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cinttypes>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 char ift_bridge_t::KIND;
@@ -74,10 +75,23 @@ ift_bridge_t::ift_bridge_t(simif_t &sim,
   if (drain_only) {
     fprintf(stdout, "[IFTBridge] no +ift-out= provided — draining stream without recording\n");
   }
+
+  // [DRVXDMA] One page-aligned buffer for the whole run (see ift_bridge.h).  The old
+  // per-tick std::vector was only malloc-aligned (16 B) and was also zero-filled
+  // (32 KB) on every tick.
+  const size_t want = static_cast<size_t>(stream_depth) * STREAM_WIDTH_BYTES;
+  dma_buf_bytes = ((want + page_size - 1) / page_size) * page_size;
+  dma_buf = static_cast<uint8_t *>(std::aligned_alloc(page_size, dma_buf_bytes));
+  if (!dma_buf) {
+    fprintf(stderr, "[IFTBridge] ERROR: cannot allocate %zu-byte DMA buffer\n",
+            dma_buf_bytes);
+    abort();
+  }
 }
 
 ift_bridge_t::~ift_bridge_t() {
   if (outfile) fclose(outfile);
+  std::free(dma_buf);
 }
 
 void ift_bridge_t::init() {
@@ -95,24 +109,41 @@ void ift_bridge_t::tick() {
   constexpr int BYTES_PER_RECORD = 32;  // 256 bits
   constexpr int BYTES_PER_BEAT   = RECORDS_PER_BEAT * BYTES_PER_RECORD;  // 64
 
-  // pull_stream returns the number of bytes consumed; beats are BYTES_PER_BEAT each.
-  // We read in chunks matching the DMA buffer depth.
-  const size_t max_bytes = static_cast<size_t>(stream_depth) * BYTES_PER_BEAT;
-  std::vector<uint8_t> buf(max_bytes);
+  static_assert(BYTES_PER_BEAT == STREAM_WIDTH_BYTES, "IFT beat must equal the stream width");
 
-  size_t bytes_received = pull(stream_idx, buf.data(), max_bytes, BYTES_PER_BEAT);
+  // pull_stream returns the number of bytes consumed; beats are BYTES_PER_BEAT each.
+  // We read in chunks matching the DMA buffer depth, into the page-aligned dma_buf.
+  const size_t max_bytes = static_cast<size_t>(stream_depth) * BYTES_PER_BEAT;
+  const uint8_t *buf = dma_buf;
+
+  size_t bytes_received = pull(stream_idx, dma_buf, max_bytes, BYTES_PER_BEAT);
   if (bytes_received == 0) return;
+  // [DRVXDMA] Never trust a count larger than the request.  A failed pread() used to come
+  // back as (size_t)-1 here; the loop below then walked off the end of the buffer into
+  // unmapped heap (SIGSEGV, exit 139).  cpu_managed_stream.cc now stops on that error;
+  // this check keeps any other bad count from turning into an out-of-bounds read.
+  if (bytes_received > max_bytes) {
+    fprintf(stderr, "[IFTBridge] ERROR: pull returned %zu bytes for a %zu-byte request; "
+                    "stream is corrupt, stopping\n", bytes_received, max_bytes);
+    flush();
+    exit(74);
+  }
 
   // Truncate to complete beats; a partial beat can arrive when the FPGA resets
   // mid-DMA at simulation teardown — discard the incomplete tail.
   bytes_received -= (bytes_received % BYTES_PER_BEAT);
   const size_t num_beats = bytes_received / BYTES_PER_BEAT;
+  // [CHUNKDRAIN] patch 54: post-run beats (end-of-run drain) are pulled and dropped.
+  if (discard) {
+    discarded_beats += num_beats;
+    return;
+  }
   total_beats += num_beats;
 
   if (drain_only || !outfile) return;
 
   for (size_t i = 0; i < num_beats; ++i) {
-    const uint8_t *beat = buf.data() + i * BYTES_PER_BEAT;
+    const uint8_t *beat = buf + i * BYTES_PER_BEAT;
     for (int r = 0; r < RECORDS_PER_BEAT; ++r) {
       ift_record_t rec;
       memcpy(&rec, beat + r * BYTES_PER_RECORD, BYTES_PER_RECORD);
@@ -135,4 +166,7 @@ void ift_bridge_t::finish() {
   else
     fprintf(stderr, "[IFTBridge] Wrote %" PRIu64 " records (%" PRIu64 " beats) to %s\n",
             total_records, total_beats, outfilename.c_str());
+  if (discarded_beats != 0)
+    fprintf(stderr, "[IFTBridge] discarded %" PRIu64 " post-run beats (end-of-run drain, "
+                    "not written)\n", discarded_beats);
 }

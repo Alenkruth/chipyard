@@ -53,6 +53,8 @@ protected:
 
 private:
   size_t idle_counts;
+  // +dmi-no-htif: hold msip until the DMI fesvr has applied +reconfig_csrs.
+  bool wait_for_dmi = false;
   bool is_busy;
   // program load has completed in the host thread (i.e. all fesvr xacts for
   // program load have been sent by fesvr)
