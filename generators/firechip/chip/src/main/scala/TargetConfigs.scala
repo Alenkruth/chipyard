@@ -455,6 +455,19 @@ class FireSimBaselineBoomCheckpoint32GBConfig extends Config(
   new FireSimBaselineBoomCheckpointConfig
 )
 
+// [NOTRACE] (owner 2026-10-26 21:5x: "Make sure the tracerv stuff is not in the bitstream"): the SPEC 32 GiB checkpoint
+// pair without TracerV. WithNoTraceIO sets core.trace=false, so no TracePort is punched and WithTracerVBridge never binds
+// (same mechanism as FireSimCoreFuzzingIFTDMILeanConfig). IPC is measured with AutoCounter, which does not need the trace.
+class FireSimReconfBoomCheckpoint32GBNoTraceConfig extends Config(
+  new chipyard.config.WithNoTraceIO ++
+  new FireSimReconfBoomCheckpoint32GBConfig
+)
+
+class FireSimBaselineBoomCheckpoint32GBNoTraceConfig extends Config(
+  new chipyard.config.WithNoTraceIO ++
+  new FireSimBaselineBoomCheckpoint32GBConfig
+)
+
 class FireSimBaselineBoomConfig extends Config(
   new WithDefaultFireSimBridges ++
   new WithFireSimConfigTweaks ++
