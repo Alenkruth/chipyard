@@ -340,6 +340,46 @@ class FireSimCoreFuzzingIFTDMILeanConfig extends Config(
   new FireSimCoreFuzzingIFTDMIConfig
 )
 
+// [area-compare 2026-10-26] Clean area/timing comparison configs (owner order 2026-10-26).
+// Same shell as FireSimCoreFuzzingIFTDMILeanConfig, fragment for fragment and in the same
+// order; only the BOOM compile-time feature gates differ:
+//   FireSimCoreFuzzingIFTDMILeanConfig : WithIFT + WithReconf + WithIFTBridge (CoreFuzzingConfig)
+//   FireSimReconfBoomDMILeanConfig     : WithReconf                           (ReconfOnlyBoomConfig)
+//   FireSimBaselineBoomDMILeanConfig   : neither                              (BaselineBoomConfig)
+// All three use WithFuzzingBoom(1) (same ROB/LDQ/STQ/PRF/IQ/FTQ/FB/cache/BTB/RAS sizes),
+// WithSystemBusWidth(128), 16 GiB target DRAM, Sv39, default PMPs, debug module + DMI, no
+// TracerV, no block device. CoreFuzzingConfig also applies WithL2Wipe (L2 directory-wipe
+// register, L2ctrl+0x100) and WithoutMemtracePrintf on top of WithFuzzingBoom; both are
+// listed below so the L2 and the printf gates match the IFT build and the netlists differ
+// only inside the core. No IFT bridge (it needs enableIFT).
+class FireSimReconfBoomDMILeanConfig extends Config(
+  new chipyard.config.WithNoTraceIO ++
+  new testchipip.iceblk.WithBlockDevice(false) ++
+  new chipyard.config.WithDebugModule ++  // re-enable debug module; WithFireSimConfigTweaks has WithNoDebug
+  new WithDefaultFireSimBridges ++
+  new WithFireSimConfigTweaks ++
+  new boom.v3.common.WithoutBoomCommitLogPrintf ++
+  new boom.v3.common.WithoutCfDebugPrintf ++
+  new chipyard.config.WithDMIDTM ++
+  new boom.v3.common.WithoutMemtracePrintf ++  // as in CoreFuzzingConfig
+  new chipyard.WithL2Wipe ++                   // as in CoreFuzzingConfig (uncore, kept identical)
+  new chipyard.ReconfOnlyBoomConfig
+)
+
+class FireSimBaselineBoomDMILeanConfig extends Config(
+  new chipyard.config.WithNoTraceIO ++
+  new testchipip.iceblk.WithBlockDevice(false) ++
+  new chipyard.config.WithDebugModule ++  // re-enable debug module; WithFireSimConfigTweaks has WithNoDebug
+  new WithDefaultFireSimBridges ++
+  new WithFireSimConfigTweaks ++
+  new boom.v3.common.WithoutBoomCommitLogPrintf ++
+  new boom.v3.common.WithoutCfDebugPrintf ++
+  new chipyard.config.WithDMIDTM ++
+  new boom.v3.common.WithoutMemtracePrintf ++  // as in CoreFuzzingConfig
+  new chipyard.WithL2Wipe ++                   // as in CoreFuzzingConfig (uncore, kept identical)
+  new chipyard.BaselineBoomConfig
+)
+
 // IFT-only BOOM for SPEC2017 SimPoint checkpoint IPC overhead measurement.
 class FireSimIFTOnlyBoomCheckpointConfig extends Config(
   new chipyard.config.WithDebugModule ++  // re-enable debug module; WithFireSimConfigTweaks has WithNoDebug
