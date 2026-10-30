@@ -13,6 +13,7 @@
 
 #include "core/bridge_driver.h"
 #include "core/clock_info.h"
+#include "ift_record_writer.h"   // [V3-DRAIN] SP-25: ring of buffers + one writer thread
 
 #include <cstdint>
 #include <cstdio>
@@ -61,6 +62,9 @@ private:
 
   std::string  outfilename;
   FILE        *outfile    = nullptr;
+  // [V3-DRAIN] SP-25 (design D10 "okay. do this"): the tick thread copies valid records into a ring of
+  // 4 x 4 MB buffers; one writer thread writes each full buffer with one fwrite (outfile is unbuffered).
+  ift_record_writer_t writer{4, size_t(4) << 20};
   bool         drain_only = false;
 
   // [DRVXDMA] Page-aligned, persistent DMA destination buffer (stream_depth beats,

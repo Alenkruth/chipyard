@@ -85,6 +85,7 @@ ift_bridge_t::ift_bridge_t(simif_t &sim,
 }
 
 ift_bridge_t::~ift_bridge_t() {
+  writer.close();   // [V3-DRAIN] SP-25: no-op after finish(); joins the writer thread otherwise
   if (outfile) fclose(outfile);
   std::free(dma_buf);
 }
@@ -98,6 +99,10 @@ void ift_bridge_t::init() {
   if (!outfile) {
     fprintf(stderr, "[IFTBridge] ERROR: cannot open output file '%s'\n",
             outfilename.c_str());
+  } else {
+    // [V3-DRAIN] SP-25: unbuffered stream, so each 4 MB buffer is one write(2) from the writer thread.
+    setvbuf(outfile, nullptr, _IONBF, 0);
+    writer.start(outfile);
   }
 }
 
@@ -205,22 +210,27 @@ void ift_bridge_t::tick_stream(uint64_t t0) {
       ift_record_t rec;
       memcpy(&rec, beat + r * BYTES_PER_RECORD, BYTES_PER_RECORD);
       if (record_valid(rec)) {
-        fwrite(&rec, BYTES_PER_RECORD, 1, outfile);
+        writer.append(&rec);   // [V3-DRAIN] SP-25: copy into the ring; the writer thread does the fwrite
         ++total_records;
       }
     }
   }
-  dh_write_ns += dh_now_ns() - t1;  // [DRAINHIST] copy + fwrite loop
+  dh_write_ns += dh_now_ns() - t1;  // [DRAINHIST] copy loop + time blocked on a full ring (SP-25)
 }
 
 void ift_bridge_t::flush() {
-  if (outfile) fflush(outfile);
+  // [V3-DRAIN] SP-25: submit the partial buffer and wait until every buffer has been written.
+  if (outfile) {
+    writer.flush();
+    fflush(outfile);
+  }
 }
 
 void ift_bridge_t::finish() {
   // [DRAINHIST] the final fflush counts as write time.
   const uint64_t tf = dh_now_ns();
   flush();
+  writer.close();   // [V3-DRAIN] SP-25: stop and join the writer thread (every record is in the file)
   dh_write_ns += dh_now_ns() - tf;
   if (drain_only)
     fprintf(stderr, "[IFTBridge] drain-only mode — no records written\n");
@@ -276,4 +286,12 @@ void ift_bridge_t::finish() {
   fprintf(stderr, " | full(=%d):%" PRIu64 "\n", stream_depth, dh_full);
   fprintf(stderr, "[IFTDRAIN] post-run discard_pulls=%" PRIu64 " discard_beats=%" PRIu64 "\n",
           dh_discard_pulls, discarded_beats);
+  // [V3-DRAIN] SP-25: write_s above is now the tick thread's copy + block time; writer_s is the writer
+  // thread's time inside fwrite; block_s is the part of write_s spent waiting for a free buffer.
+  if (!drain_only && outfile)
+    fprintf(stderr,
+            "[IFTDRAIN] writer bufs=%zu x %zu B records=%" PRIu64 " submits=%" PRIu64
+            " buffers_written=%" PRIu64 " writer_s=%.3f block_s=%.3f max_queued=%zu write_errors=%" PRIu64 "\n",
+            writer.nbufs(), writer.buf_bytes(), writer.records, writer.submits, writer.buffers_written,
+            writer.writer_ns * 1e-9, writer.block_ns * 1e-9, writer.max_queued, writer.write_errors);
 }
