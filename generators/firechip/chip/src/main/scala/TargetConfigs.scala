@@ -299,6 +299,12 @@ class FireSimCoreFuzzingIFTDMIConfig extends Config(
   new WithDefaultFireSimBridges ++
   new WithFireSimConfigTweaks ++
   new boom.v3.common.WithoutBoomCommitLogPrintf ++
+  // [lean58 print gating] (owner order 2026-10-23, timing audit F10): compile out the CF debug printfs
+  // ([SPECULATIVE], [KILLOVF], [D4RAS], [ICFILL], ...). This build has no print bridge, so they were
+  // simulation-only and synthesis already removed them (about 0 LUT/FF, 0 ns); the FireSim Verilog shrinks
+  // by about 10%. Inherited by FireSimCoreFuzzingIFTDMILeanConfig. The Verilator CoreFuzzingDMIConfig
+  // (chipyard package) does not inherit from this config and keeps every print.
+  new boom.v3.common.WithoutCfDebugPrintf ++
   new boom.v3.common.WithIFTBridge ++
   // [Task 2.10g] CoreFuzzingDMIConfig's hardware fragments, listed directly: that config now also
   // sets the Verilator-only IFT oracle mode (and a Verilator harness serial-TL tie-off), which no
