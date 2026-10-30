@@ -12,40 +12,26 @@
 
 char ift_bridge_t::KIND;
 
-// IFT record layout (256 bits = 32 bytes, little-endian):
-//   bits[1:0]     event_type  (01=commit, 10=squash, 00=NOP/padding)
-//   bits[4:2]     priv
-//   bits[44:5]    pc[39:0]
-//   bits[76:45]   insn[31:0]
-//   bits[83:77]   flags (domain, spec, atk, s_acc, s_prop, s_tx, src_tainted)
-//   bits[85:84]   infl_dropped              (2b saturating COUNT of discarded influencers;
-//                                            was a 1b sticky infl_ovf flag)
-//   bits[101:86]  op_count[15:0]            (16b = uopIDCounterWidthCF)
-//   bits[103:102] spec_branch_is_atk, spec_branch_is_secret
-//   bits[119:104] spec_branch_op_id[15:0]   (16b = uopIDCounterWidthCF)
-//   bits[120]     single_step
-//   bits[144:121] fu_bitmap[23:0]
-//   bits[147:145] cntd_deny_count           (3b Log2Bucket: issue-port denial cycles)
-//   bits[150:148] stall_cycles_rob          (3b Log2Bucket: ROB-full dispatch stall)
-//   bits[153:151] stall_cycles_stq          (3b Log2Bucket: STQ head-of-line residency)
-//   bits[217:154] influencer[0..3]          (4 × 16b each)
-//     Per slot: valid(1)+op_count(8)+infl_type(5)+is_atk(1)+is_secret(1)
-//     op_count holds only the LOW 8 bits of the producer's id; software reconstructs
-//     it against this record's own op_count.
-//   bits[255:218] reserved/zero
+// IFT record v3 (256 bits = 32 bytes, little-endian; one layout, no version field).
+// The bit map is the contract in boom.v3.exu.IFTRecordV3 (generators/boom/src/main/scala/v3/exu/IFTRecordV3.scala)
+// and in claude-artifacts/ift-overhaul/reviews/record-v3-sink-design-20261025.md sections 2.2-2.6 and 5.1:
+//   bits[3:0]     class   0 NOP (bridge padding), 1 COMMIT, 2 SQUASH, 3 KILL, 8 STATE (one per cycle, groups
+//                         R/M/L/IC/RAS/PRED, EPOCH overlay, flags pf_drop/wrport); 4-7 and 9-15 reserved
+//   bits[31:16]   cyc     low 16 bits of the tile cycle counter at the event (every class)
+//   the rest of the layout depends on the class (instruction body or STATE groups).
+// The 4 commit slots carry COMMIT records; the fifth (lane) slot carries SQUASH, KILL and STATE records.
 //
-// NOTE: this driver does not decode any of the above -- it extracts only event_type
-// (bits[1:0]) and copies the remaining 254 bits opaquely, so a layout change needs no
-// code change here.  The decoders that DO care are IFTBridgeIO.scala (packer) and
-// base-attacks/fuzzer/decode_ift_bridge.py (unpacker); keep all three in lockstep.
+// NOTE: this driver decodes only `class` (bits[3:0]): a record is kept iff class != 0, the rest is copied
+// opaquely, so a layout change inside a class needs no code change here.  The packer (IFTRecordV3.scala) and the
+// decoders (base-attacks/fuzzer/boom_ift/ift_record_v3.py, decode_ift_bridge.py, decode_ift_fast.py) must agree.
 struct ift_record_t {
   uint64_t words[4];  // 4 × 64b = 256b
 };
 static_assert(sizeof(ift_record_t) == 32, "IFT record must be 32 bytes");
 
-// Extract event_type from a packed record.
-static inline int event_type(const ift_record_t &r) {
-  return static_cast<int>(r.words[0] & 0x3);
+// A record is valid iff its class (bits[3:0], IFTRecordV3) is non-zero; class 0 is the bridge's zero padding.
+static inline bool record_valid(const ift_record_t &r) {
+  return (r.words[0] & 0xF) != 0;
 }
 
 ift_bridge_t::ift_bridge_t(simif_t &sim,
@@ -218,7 +204,7 @@ void ift_bridge_t::tick_stream(uint64_t t0) {
     for (int r = 0; r < RECORDS_PER_BEAT; ++r) {
       ift_record_t rec;
       memcpy(&rec, beat + r * BYTES_PER_RECORD, BYTES_PER_RECORD);
-      if (event_type(rec) != 0) {
+      if (record_valid(rec)) {
         fwrite(&rec, BYTES_PER_RECORD, 1, outfile);
         ++total_records;
       }

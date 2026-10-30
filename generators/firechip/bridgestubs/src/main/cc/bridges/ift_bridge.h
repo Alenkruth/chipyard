@@ -2,12 +2,12 @@
 //
 // Reads 256-bit IFT records from a 512-bit DMA stream and writes them to a
 // binary output file.  Each 512-bit beat contains two records (lower 256 bits
-// first); a record is valid if its event_type field (bits[1:0]) is non-zero.
+// first); a record is valid if its class field (bits[3:0]) is non-zero.
 //
 // Output file format: raw stream of 32-byte (256-bit) IFT record structs.
-// The offline analysis tool (parse_ift_log.py or a future ift_decode) maps
-// event_type, op_count, influencer entries, etc. from the packed bit layout
-// defined in boom.v3.exu.IFTBridgeIO.
+// The offline decoders (base-attacks/fuzzer/boom_ift/decode_ift_bridge.py and its
+// fast twin) map class, cyc, op_count, influencer slots and the STATE groups from
+// the record v3 bit layout defined in boom.v3.exu.IFTRecordV3.
 
 #pragma once
 
