@@ -8,12 +8,13 @@
 //   bits[255:0]   record[0]  (lower-index or padding zero)
 //   bits[511:256] record[1]  (higher-index)
 //
-// Compaction (D12, Task 3.7): the valid records of a cycle are packed, in slot order
-// (commit[0..retireWidth-1], then squash), into the lowest slots of "packed".  Arm j is
-// packed[2j], packed[2j+1].  A cycle with k valid records therefore takes ceil(k/2) beats.
-// For a retireWidth=4 core (5 slots: 4 commit + 1 squash), k = 1..2 takes 1 beat, k = 3..4
-// takes 2 beats and k = 5 takes 3 beats.  The squash record may share a beat with a commit
-// record.  An unused slot of the last beat is zero (event_type 0), which the driver drops.
+// Compaction (D12, Task 3.7) and cross-cycle packing ([V3-PACK] SP-26, design D10): the valid records of a
+// cycle are packed, in slot order (commit[0..retireWidth-1], then the squash/kill/STATE lane), into the lowest
+// slots; with packAcrossCycles an odd last record waits in a one-record hold and shares its beat with the
+// next cycle's first record, so the stream carries ceil(records/2) beats plus one zero-padded beat per flush
+// (16 record-free target cycles, or idleLimit host cycles without a token).  packAcrossCycles = false sends
+// ceil(k/2) beats per cycle, the pre-SP-26 behaviour.  The logic is firechip.bridgeinterfaces.IFTBeatPacker
+// (tested by firechip.bridgestubs.IFTBeatPackerSpec, FT-11).  A zero (class 0) half is dropped by the driver.
 //
 // The C++ driver (ift_bridge.h / ift_bridge.cc) reads beats, splits them into
 // 256-bit records, and writes them to a binary file for offline analysis.
@@ -21,13 +22,11 @@
 package firechip.goldengateimplementations
 
 import chisel3._
-import chisel3.util._
 
 import org.chipsalliance.cde.config.Parameters
 
 import midas.widgets._
 import firesim.lib.bridgeutils._
-import freechips.rocketchip.util.DecoupledHelper
 
 import firechip.bridgeinterfaces._
 
@@ -87,72 +86,26 @@ class IFTBridgeModule(key: IFTBridgeParams)(implicit p: Parameters)
     allRecords(retireWidth) := hPort.hBits.squash_record
     allValids(retireWidth)  := hPort.hBits.squash_valid
 
-    // [BRIDGECOMPACT] D12 (Task 3.7).  Pack the valid records into the lowest slots, keeping
-    // slot order.  prefix(s) = number of valid records below slot s, so a valid slot s lands
-    // in packed slot prefix(s).  At most one slot selects each destination d (prefix is
-    // strictly increasing over the valid slots), so Mux1H is exact and an unselected
-    // destination is zero (event_type 0, dropped by the driver).  Only s >= d can select d
-    // (prefix(s) <= s), so the other terms are not built.  Host-side logic only: the
-    // target token is unchanged, and the prefix counts are 4-input popcounts.
-    val prefix = (0 until totalRecords).map(i => PopCount(allValids.take(i)))
-    val packed  = Wire(Vec(totalRecords, UInt(recordBits.W)))
-    val packedV = Wire(Vec(totalRecords, Bool()))
-    for (d <- 0 until totalRecords) {
-      val sel = (d until totalRecords).map(s => allValids(s) && prefix(s) === d.U)
-      packedV(d) := sel.reduce(_ || _)
-      packed(d)  := Mux1H(sel, (d until totalRecords).map(allRecords(_)))
-    }
+    // [V3-PACK] SP-26 (design D10, owner "okay. do this"): compaction ([BRIDGECOMPACT], unchanged) plus
+    // cross-cycle packing in IFTBeatPacker.  The handshake is the one this block had before: a token fires
+    // only in the cycle its last beat is enqueued (or at once when it has no beat), and every enqueue/fire
+    // needs toHost.hValid, fromHost.hReady and streamEnq.ready.  Host-side logic only: the target token is
+    // unchanged.  packAcrossCycles = false reproduces the pre-SP-26 beats exactly (FT-11).
+    val packAcrossCycles = true
+    val packer = Module(new IFTBeatPacker(totalRecords, recordBits, packAcrossCycles))
+    require(recordsPerBeat == 2 && packer.beatBits == BridgeStreamConstants.streamWidthBits,
+            "IFTBridgeModule: two 256-bit records per 512-bit beat")
+    require(packer.maxBeats >= numArms, "IFTBridgeModule: the packer must cover every arm of a token")
+    packer.io.in.valid        := hPort.toHost.hValid && hPort.fromHost.hReady
+    packer.io.in.bits.valids  := allValids
+    packer.io.in.bits.records := allRecords
+    packer.io.out.ready       := streamEnq.ready
 
-    // Group the packed records into arms of recordsPerBeat (= 2) entries.
-    // For each arm: pad short arms with zero-record.
-    val armIndices: Seq[Seq[Int]] = (0 until totalRecords).grouped(recordsPerBeat).toSeq
-    // 512-bit stream bits for each arm (pad to streamWidthBits)
-    val allStreamBits: Seq[UInt] = armIndices.map { idxGroup =>
-      val recs = idxGroup.padTo(recordsPerBeat, -1)  // -1 → zero padding
-      val parts: Seq[UInt] = recs.reverse.map {
-        case -1 => 0.U(recordBits.W)
-        case k  => packed(k)
-      }
-      Cat(parts).pad(BridgeStreamConstants.streamWidthBits)
-    }
+    streamEnq.bits  := packer.io.out.bits
+    streamEnq.valid := packer.io.out.valid
 
-    // anyValid(armIdx) = true if any packed record in that arm is valid.  Because the valid
-    // records are packed from slot 0 up, this is packedV of the arm's first slot.
-    val anyValid: Seq[Bool] = armIndices.map(idxGroup =>
-      packedV(idxGroup.head)
-    )
-
-    // anyValidRemain(armIdx) = OR of anyValid for arms >= armIdx.
-    val anyValidRemain: Seq[Bool] = Seq.tabulate(numArms) { idx =>
-      (idx until numArms).map(anyValid(_)).reduce(_ || _)
-    }
-
-    // Counter selects which arm to drain.
-    val counterBits = log2Ceil(numArms + 1)
-    val counter     = RegInit(0.U(counterBits.W))
-
-    val streamMux         = MuxLookup(counter, allStreamBits(0), Seq.tabulate(numArms)(x => x.U -> allStreamBits(x)))
-    val anyValidRemainMux = MuxLookup(counter, false.B, Seq.tabulate(numArms)(x => x.U -> anyValidRemain(x)))
-
-    // A token fires (consumed) once we've passed all arms with valid data.
-    val maybeFire = !anyValidRemainMux || (counter === (numArms - 1).U)
-    val maybeEnq  = anyValidRemainMux
-
-    val commonPredicates = Seq(hPort.toHost.hValid, hPort.fromHost.hReady, streamEnq.ready)
-    val do_enq_helper  = DecoupledHelper((maybeEnq +: commonPredicates):_*)
-    val do_fire_helper = DecoupledHelper((maybeFire +: commonPredicates):_*)
-
-    when (do_fire_helper.fire()) {
-      counter := 0.U
-    } .elsewhen (do_enq_helper.fire()) {
-      counter := counter + 1.U
-    }
-
-    streamEnq.bits  := streamMux
-    streamEnq.valid := do_enq_helper.fire(streamEnq.ready)
-
-    hPort.toHost.hReady   := do_fire_helper.fire(hPort.toHost.hValid)
-    hPort.fromHost.hValid := do_fire_helper.fire(hPort.fromHost.hReady)
+    hPort.toHost.hReady   := packer.io.in.ready && hPort.fromHost.hReady
+    hPort.fromHost.hValid := packer.io.in.ready && hPort.toHost.hValid
 
     genCRFile()
 
