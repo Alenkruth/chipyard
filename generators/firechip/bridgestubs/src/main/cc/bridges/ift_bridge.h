@@ -41,12 +41,17 @@ public:
   // [CHUNKDRAIN] patch 54 (firesim_top.cc end-of-run drain).  In discard mode tick()
   // still pulls the stream (so the target is never back-pressured) but writes nothing;
   // the beats are counted in discarded_beats, not total_beats.
-  void set_discard(bool on) { discard = on; }
+  void set_discard(bool on) {
+    // [DRAINHIST] the run phase ends when the end-of-run drain starts discarding.
+    if (on && !discard && dh_run_end_ns == 0) dh_run_end_ns = dh_now_ns();
+    discard = on;
+  }
   uint64_t beats_seen() const { return total_beats + discarded_beats; }
   uint64_t discarded() const { return discarded_beats; }
 
 private:
   void flush();
+  void tick_stream(uint64_t t0);  // [DRAINHIST] the original tick() body, t0 = tick start
 
   int          stream_idx;
   int          stream_depth;
@@ -73,4 +78,32 @@ private:
   uint64_t     total_beats   = 0;
   bool         discard         = false;
   uint64_t     discarded_beats = 0;
+
+  // [DRAINHIST] Drain measurement (software only; what is written to the bin is unchanged).
+  // Per-pull size histogram in beats: bucket 0 = empty pull, bucket k (k >= 1) =
+  // [2^(k-1), 2^k) beats; a pull of stream_depth beats (the whole FPGA queue, 512) is
+  // also counted in dh_full.  Times are CLOCK_MONOTONIC ns: in pull() (MMIO count read
+  // + DMA pread), in the record copy/fwrite loop, and outside this bridge's tick()
+  // (other bridges, DONE polling, the scheduler).  Printed once at finish(); with
+  // +ift-drain-stats-period=N (seconds, default 0 = off) an interval line every N s.
+  static uint64_t dh_now_ns();
+  void dh_print_interval(uint64_t now);
+  static constexpr int DH_BUCKETS = 34;
+  uint64_t     dh_hist[DH_BUCKETS] = {};
+  uint64_t     dh_full          = 0;
+  uint64_t     dh_max_beats     = 0;
+  uint64_t     dh_pull_ns       = 0;
+  uint64_t     dh_empty_pull_ns = 0;
+  uint64_t     dh_write_ns      = 0;
+  uint64_t     dh_outside_ns    = 0;
+  uint64_t     dh_ticks         = 0;
+  uint64_t     dh_discard_pulls = 0;
+  uint64_t     dh_start_ns      = 0;
+  uint64_t     dh_last_tick_end_ns = 0;
+  uint64_t     dh_run_end_ns    = 0;
+  uint64_t     dh_period_ns     = 0;
+  uint64_t     dh_next_print_ns = 0;
+  // interval snapshot (for the periodic line)
+  uint64_t     dh_iv_ns = 0, dh_iv_pulls = 0, dh_iv_beats = 0, dh_iv_full = 0,
+               dh_iv_empty = 0, dh_iv_pull_ns = 0, dh_iv_write_ns = 0;
 };
