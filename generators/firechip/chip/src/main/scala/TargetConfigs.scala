@@ -339,6 +339,14 @@ class FireSimCoreFuzzingIFTDMILeanConfig extends Config(
   new testchipip.iceblk.WithBlockDevice(false) ++
   new FireSimCoreFuzzingIFTDMIConfig
 )
+class FireSimCoreFuzzingIFTDMILeanSTTConfig extends Config(new boom.v3.common.WithSTT ++ new FireSimCoreFuzzingIFTDMILeanConfig)
+class FireSimCoreFuzzingIFTDMILeanSTTDoppelgangerConfig extends Config(
+  new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++ new FireSimCoreFuzzingIFTDMILeanConfig)
+class FireSimCoreFuzzingIFTDMILeanSpecASanConfig extends Config(new boom.v3.common.WithSpecASan() ++ new FireSimCoreFuzzingIFTDMILeanConfig)
+class FireSimCoreFuzzingIFTDMILeanCevicheConfig extends Config(new boom.v3.common.WithCeviche ++ new FireSimCoreFuzzingIFTDMILeanConfig)
+class FireSimCoreFuzzingIFTDMILeanAllDefConfig extends Config(
+  new boom.v3.common.WithCeviche ++ new boom.v3.common.WithSpecASan() ++
+  new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++ new FireSimCoreFuzzingIFTDMILeanConfig)
 
 // [area-compare 2026-10-26] Clean area/timing comparison configs (owner order 2026-10-26).
 // Same shell as FireSimCoreFuzzingIFTDMILeanConfig, fragment for fragment and in the same

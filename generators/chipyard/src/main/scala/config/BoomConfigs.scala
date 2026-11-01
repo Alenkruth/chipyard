@@ -272,6 +272,24 @@ class CoreFuzzingDMIConfig extends Config(
   new chipyard.config.WithDMIDTM ++
   new CoreFuzzingConfig)
 
+// ---- Hardware defenses (defense-clean-plans *-plan-v5.md). Every defense CSR resets to 0 = stock cycle behaviour. ----
+class CoreFuzzingDMISTTConfig extends Config(new boom.v3.common.WithSTT ++ new CoreFuzzingDMIConfig)
+class CoreFuzzingDMISTTNoLogConfig extends Config(new boom.v3.common.WithSTT ++ new CoreFuzzingDMINoLogConfig)
+class CoreFuzzingDMISTTDoppelgangerConfig extends Config(
+  new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++ new CoreFuzzingDMIConfig)
+class CoreFuzzingDMISTTDoppelgangerNoLogConfig extends Config(
+  new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++ new CoreFuzzingDMINoLogConfig)
+class CoreFuzzingDMISpecASanConfig extends Config(new boom.v3.common.WithSpecASan() ++ new CoreFuzzingDMIConfig)
+class CoreFuzzingDMISpecASanNoLogConfig extends Config(new boom.v3.common.WithSpecASan() ++ new CoreFuzzingDMINoLogConfig)
+class CoreFuzzingDMICevicheConfig extends Config(new boom.v3.common.WithCeviche ++ new CoreFuzzingDMIConfig)
+class CoreFuzzingDMICevicheNoLogConfig extends Config(new boom.v3.common.WithCeviche ++ new CoreFuzzingDMINoLogConfig)
+class CoreFuzzingDMIAllDefConfig extends Config(
+  new boom.v3.common.WithCeviche ++ new boom.v3.common.WithSpecASan() ++
+  new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++ new CoreFuzzingDMIConfig)
+class CoreFuzzingDMIAllDefNoLogConfig extends Config(
+  new boom.v3.common.WithCeviche ++ new boom.v3.common.WithSpecASan() ++
+  new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++ new CoreFuzzingDMINoLogConfig)
+
 // FireSim FPGA variant: inherits ALL parameters from CoreFuzzingConfig.
 // Adds WithIFTBridge which exports IFT commit/squash records as tile IO for GoldenGate synthesis.
 // WithIFTPunchthrough (in AbstractConfig) creates the IFTPort; WithIFTVBridge (firechip) connects it.
