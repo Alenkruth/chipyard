@@ -37,7 +37,16 @@ REG = {
     "DCache":           (TILE + ".dcache",             [("sets", "dc_sets", "dcacheSetOptions"),
                                                         ("ways", "dc_ways", "cacheWayOptions")], 1),
     "Core":             (TILE + ".core",               [], 1),
-    "Tile":             (TILE,                         [], 1),
+    # whole tile: every size key may be set at once (missing keys = built size); used to validate module sums
+    "Tile":             (TILE, [("rob", "rob", "robEntryOptions"), ("fb", "fb", "fetchBufferEntryOptions"),
+                                ("ftq", "ftq", "ftQueueEntryOptions"), ("ras", "ras", "rasEntryCountOptions"),
+                                ("iprf", "iprf", "pregFileSizeOptions"), ("fprf", "fprf", "fpPregFileSizeOptions"),
+                                ("iq_int", "iq_int", "issueQueueEntryOptions"), ("iq_mem", "iq_mem", "issueQueueEntryOptions"),
+                                ("iq_fp", "iq_fp", "issueQueueEntryOptions"), ("ldq", "ldq", "ldQueueEntryOptions"),
+                                ("stq", "stq", "stQueueEntryOptions"), ("btb_sets", "btb_sets", "btbSetOptions"),
+                                ("btb_ways", "btb_ways", "btbWayOptions"), ("tage", "tage", "tagetableCountOptions"),
+                                ("ic_sets", "ic_sets", "icacheSetOptions"), ("ic_ways", "ic_ways", "cacheWayOptions"),
+                                ("dc_sets", "dc_sets", "dcacheSetOptions"), ("dc_ways", "dc_ways", "cacheWayOptions")], 1),
 }
 # D$ replacement policy (BoomCoreParams.dcacheReplPolicy codes, parameters.scala:142-148)
 # Pattern counting every copy of the module in one tile (instances_per_tile is MEASURED from the

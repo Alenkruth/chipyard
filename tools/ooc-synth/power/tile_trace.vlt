@@ -1,0 +1,11 @@
+// tile_trace.vlt -- Verilator configuration file for the activity-power pilot (plan power-pilot-plan.md 1.2).
+// Purpose: keep waveform tracing (FST) to the synthesized BoomTile instead of the whole TestHarness.
+// Input  : none (plain Verilator config; patterns match the hierarchical scope names of the model).
+// Usage  : passed to the sim build as an extra source, together with --trace-underscore:
+//            make -j20 debug CONFIG=BaselineBoomPowerDMIConfig VERILATOR_THREADS=20 NUMACTL=1 USE_FST=1 \
+//              EXTRA_SIM_SOURCES="--trace-underscore $CY/tools/ooc-synth/power/tile_trace.vlt"
+// Note   : that a later `tracing_on -scope` re-enables tracing inside the global `tracing_off` is an assumption
+//          (plan 1.2, risk 3); step S0 checks the FST hierarchy.  fst2saif cuts the scope anyway.
+`verilator_config
+tracing_off
+tracing_on -scope "*element_reset_domain_boom_tile*"

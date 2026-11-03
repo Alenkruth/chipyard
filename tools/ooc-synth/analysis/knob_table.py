@@ -26,9 +26,9 @@ KNOBS = [  # knob, module, instance path suffix (relative to the tile), note
  ('uBTB (bank 1, not a fuzzed knob)', 'FAMicroBTBBranchPredictorBank', 'frontend/bpd/banked_predictors_1/ubtb', ''),
  ('Branch predictor total', 'BranchPredictor', 'frontend/bpd', 'BTB + TAGE + uBTB + composer, both banks'),
  ('Rename stage (INT, incl. freelist)', 'RenameStage', 'core/rename_stage', 'width-dependent'),
- ('Core total', 'BoomCore', 'core', ''),
- ('Frontend total', 'BoomFrontend', 'frontend', ''),
- ('Tile total', 'BoomTile', '', ''),
+ ('Pipeline (BoomCore) total', 'BoomCore', 'core', ''),
+ ('BoomFrontend total', 'BoomFrontend', 'frontend', ''),
+ ('BoomTile total', 'BoomTile', '', ''),
 ]
 ap = argparse.ArgumentParser(); ap.add_argument('--rpt', required=True); ap.add_argument('--build', required=True)
 ap.add_argument('--csv', required=True); ap.add_argument('--md', required=True); a = ap.parse_args()
