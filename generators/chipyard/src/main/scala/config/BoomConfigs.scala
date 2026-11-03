@@ -238,6 +238,118 @@ class BaselineBoomCheckpointSv57Config extends Config(
   new chipyard.config.WithSV57 ++
   new BaselineBoomCheckpointConfig)
 
+// Activity-power pilot (owner 2026-11-02, plan claude-artifacts/ooc-synthesis/plans/power-pilot-plan.md):
+// BoomTile identical to the OOC Baseline point (ooc.OocPointConfig variant=base,
+// tools/ooc-synth/scala/src/OocPoint.scala) plus the DMI loader. WithSerialTLTiedOff/WithDMIDTM are
+// harness/debug-module only. All printfs off, so +verbose prints only the harness PASSED/FAILED line.
+// NOTE: names must contain NO underscore -- the Chipyard config-string parser splits on '_'.
+class BaselineBoomPowerDMIConfig extends Config(
+  new chipyard.harness.WithSerialTLTiedOff ++
+  new chipyard.config.WithDMIDTM ++
+  new boom.v3.common.WithoutBoomCommitLogPrintf ++
+  new boom.v3.common.WithoutCfDebugPrintf ++
+  new boom.v3.common.WithoutMemtracePrintf ++
+  new chipyard.config.WithNoTraceIO ++
+  new freechips.rocketchip.subsystem.WithExtMemSize((1L << 30) * 16L) ++
+  new freechips.rocketchip.subsystem.WithoutTLMonitors ++
+  new chipyard.WithL2Wipe ++
+  new BaselineBoomConfig)
+
+// Power calibration (owner 2026-11-02 "Calibrated estimate", RULES C 'Power axis route';
+// plan claude-artifacts/ooc-synthesis/plans/power-calibration-plan.md). Static sizes of one OOC Baseline Tile
+// point: a copy of ooc.WithOocSizes + ooc.OocBpd (tools/ooc-synth/scala/src/OocPoint.scala:49-70, 135-179,
+// width_mode=full) with the static-width issue widths of widthmap.json written out (BOOM preset of that
+// decodeWidth capped at WithFuzzingBoom: width 2 -> int 2 / mem 1 / fp 1, width 1 -> 1 / 1 / 1), so the sim jar
+// needs no ooc classes. spec = the point's elab.json "spec" without "variant" (a key is present only when it
+// differs from the built size). Step P3 (tile_equiv.py) proves simulated tile == synthesized tile.
+// If WithOocSizes, OocBpd or WithTAGELBPD change, this copy must follow.
+object PowerCalSizes {
+  val keys = Set("width", "rob", "fb", "ftq", "ras", "iprf", "fprf", "iq_int", "iq_mem", "iq_fp", "ldq", "stq",
+    "btb_sets", "btb_ways", "tage", "ic_sets", "ic_ways", "dc_sets", "dc_ways")
+  def parse(s: String): Map[String, Int] = s.split(";").map(_.trim).filter(_.nonEmpty).map { kv =>
+    val i = kv.indexOf('=')
+    require(i > 0 && keys.contains(kv.take(i)), s"PowerCalSizes: bad entry '$kv'")
+    kv.take(i) -> kv.drop(i + 1).toInt
+  }.toMap
+  def issueWidth(w: Int, iqType: BigInt, built: Int): Int = w match {
+    case 4 => built
+    case 2 => if (iqType == boom.v3.common.IQT_INT.litValue) 2 else 1
+    case 1 => 1
+    case _ => throw new Exception(s"PowerCalSizes: width $w is not in coreWidthOptions (4, 2, 1)")
+  }
+  // instance names (val names) identical to WithTAGELBPD / ooc.OocBpd: loop, tage, btb, bim, ubtb
+  def bpd(tageP: boom.v3.ifu.BoomTageParams, btbP: boom.v3.ifu.BoomBTBParams) =
+    (resp_in: boom.v3.ifu.BranchPredictionBankResponse, p: org.chipsalliance.cde.config.Parameters) => {
+      val loop = chisel3.Module(new boom.v3.ifu.LoopBranchPredictorBank()(p))
+      val tage = chisel3.Module(new boom.v3.ifu.TageBranchPredictorBank(tageP)(p))
+      val btb = chisel3.Module(new boom.v3.ifu.BTBBranchPredictorBank(btbP)(p))
+      val bim = chisel3.Module(new boom.v3.ifu.BIMBranchPredictorBank()(p))
+      val ubtb = chisel3.Module(new boom.v3.ifu.FAMicroBTBBranchPredictorBank()(p))
+      val preds = Seq(loop, tage, btb, ubtb, bim)
+      preds.map(_.io := chisel3.DontCare)
+      ubtb.io.resp_in(0) := resp_in
+      bim.io.resp_in(0) := ubtb.io.resp
+      btb.io.resp_in(0) := bim.io.resp
+      tage.io.resp_in(0) := btb.io.resp
+      loop.io.resp_in(0) := tage.io.resp
+      (preds, loop.io.resp)
+    }
+}
+
+class WithPowerCalSizes(specStr: String) extends Config((site, here, up) => {
+  case freechips.rocketchip.subsystem.TilesLocated(freechips.rocketchip.subsystem.InSubsystem) =>
+    up(freechips.rocketchip.subsystem.TilesLocated(freechips.rocketchip.subsystem.InSubsystem), site) map {
+      case tp: boom.v3.common.BoomTileAttachParams =>
+        val spec = PowerCalSizes.parse(specStr)
+        var c = tp.tileParams.core
+        var ic = tp.tileParams.icache.get
+        var dc = tp.tileParams.dcache.get
+        spec.get("width").foreach { w =>
+          c = c.copy(decodeWidth = w, issueParams = c.issueParams.map(ip =>
+            ip.copy(dispatchWidth = w, issueWidth = PowerCalSizes.issueWidth(w, ip.iqType, ip.issueWidth))))
+        }
+        spec.get("rob").foreach(v => c = c.copy(numRobEntries = v))
+        spec.get("fb").foreach(v => c = c.copy(numFetchBufferEntries = v))
+        spec.get("ftq").foreach(v => c = c.copy(ftq = c.ftq.copy(nEntries = v)))
+        spec.get("ras").foreach(v => c = c.copy(numRasEntries = v))
+        spec.get("iprf").foreach(v => c = c.copy(numIntPhysRegisters = v))
+        spec.get("fprf").foreach(v => c = c.copy(numFpPhysRegisters = v))
+        def iq(key: String, t: BigInt) = spec.get(key).foreach { v =>
+          c = c.copy(issueParams = c.issueParams.map(ip => if (ip.iqType == t) ip.copy(numEntries = v) else ip))
+        }
+        iq("iq_int", boom.v3.common.IQT_INT.litValue); iq("iq_mem", boom.v3.common.IQT_MEM.litValue)
+        iq("iq_fp", boom.v3.common.IQT_FP.litValue)
+        spec.get("ldq").foreach(v => c = c.copy(numLdqEntries = v))
+        spec.get("stq").foreach(v => c = c.copy(numStqEntries = v))
+        spec.get("ic_sets").foreach(v => ic = ic.copy(nSets = v))
+        spec.get("ic_ways").foreach(v => ic = ic.copy(nWays = v))
+        spec.get("dc_sets").foreach(v => dc = dc.copy(nSets = v))
+        spec.get("dc_ways").foreach(v => dc = dc.copy(nWays = v))
+        if (spec.contains("tage") || spec.contains("btb_sets") || spec.contains("btb_ways")) {
+          val dflt = boom.v3.ifu.BoomTageParams()
+          val tage = dflt.copy(tableInfo = dflt.tableInfo.take(spec.getOrElse("tage", dflt.tableInfo.size)))
+          val b0 = boom.v3.ifu.BoomBTBParams()
+          val sets = spec.getOrElse("btb_sets", b0.nSets)
+          val btbP = b0.copy(nSets = sets, nWays = spec.getOrElse("btb_ways", b0.nWays),
+            extendedNSets = b0.extendedNSets min sets) // btb.scala:35 requires extendedNSets <= nSets
+          c = c.copy(branchPredictor = PowerCalSizes.bpd(tage, btbP))
+        }
+        tp.copy(tileParams = tp.tileParams.copy(core = c, icache = Some(ic), dcache = Some(dc)))
+      case other => other
+    }
+})
+
+// The five calibration / held-out tiles (Baseline). NOTE: names must contain NO underscore.
+class BaselineBoomPowerCalW4DMIConfig extends Config(new BaselineBoomPowerDMIConfig)   // own sim binary; same tile as the pilot
+class BaselineBoomPowerCalW2DMIConfig extends Config(new WithPowerCalSizes("width=2") ++ new BaselineBoomPowerDMIConfig)
+class BaselineBoomPowerCalW1DMIConfig extends Config(new WithPowerCalSizes("width=1") ++ new BaselineBoomPowerDMIConfig)
+class BaselineBoomPowerCalMin4DMIConfig extends Config(new WithPowerCalSizes(
+  "btb_sets=32;btb_ways=1;dc_sets=16;dc_ways=1;fb=16;fprf=40;ftq=8;ic_sets=8;ic_ways=1;iprf=48;iq_fp=8;iq_int=8;iq_mem=8;ldq=8;ras=4;rob=32;stq=8;tage=1") ++
+  new BaselineBoomPowerDMIConfig)
+class BaselineBoomPowerCalHeld2DMIConfig extends Config(new WithPowerCalSizes(
+  "btb_sets=64;dc_sets=64;dc_ways=4;fb=32;fprf=48;ftq=16;ic_sets=32;ic_ways=4;iprf=96;iq_fp=16;iq_int=16;iq_mem=16;ldq=24;ras=16;rob=128;stq=24;tage=5;width=2") ++
+  new BaselineBoomPowerDMIConfig)
+
 // Verilator IFT fuzzer config with DMI pre-execution reconfiguration support.
 // Same hardware as CoreFuzzingConfig. WithDMIDTM exposes a DMI debug port so
 // testchip_dtm can halt the hart, write structure-size/domain CSRs via
