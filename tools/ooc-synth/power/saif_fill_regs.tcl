@@ -56,7 +56,8 @@ proc saif_fill_regs {datafile outdir} {
   set ng 0
   dict for {v nets} $groups { lassign $v r p; set_switching_activity -signal_rate $r -static_probability $p $nets; incr ng }
   set mf [open [file join $outdir saif_fill_miss.txt] w]
-  foreach {p n} [lsort -stride 2 -index 1 -integer -decreasing [array get pat]] { puts $mf "$n\t$p" }
+  set prs {}; foreach {p n} [array get pat] { lappend prs [list $p $n] }   ;# Tcl 8.5 (Vivado 2023.1): no lsort -stride
+  foreach pr [lsort -index 1 -integer -decreasing $prs] { puts $mf "[lindex $pr 1]\t[lindex $pr 0]" }
   close $mf
   foreach k {cells named set no_rule not_in_saif no_q} { puts "SAIF_FILL $k $st($k)" }
   puts "SAIF_FILL value_groups $ng seconds [expr {([clock milliseconds] - $t) / 1000.0}]"
