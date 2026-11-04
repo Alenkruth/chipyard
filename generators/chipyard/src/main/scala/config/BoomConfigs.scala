@@ -401,6 +401,14 @@ class CoreFuzzingDMIAllDefConfig extends Config(
 class CoreFuzzingDMIAllDefNoLogConfig extends Config(
   new boom.v3.common.WithCeviche ++ new boom.v3.common.WithSpecASan() ++
   new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++ new CoreFuzzingDMINoLogConfig)
+// No-Ceviche defense set (owner 2026-11-03, RULES C 'NoCev bitstream'): STT + Doppelganger + SpecASan, no Ceviche
+// (Ceviche CRFs were the AllDef area/congestion driver). Verilator twins of FireSimCoreFuzzingIFTDMILeanNoCevConfig.
+class CoreFuzzingDMINoCevConfig extends Config(
+  new boom.v3.common.WithSpecASan() ++ new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++
+  new CoreFuzzingDMIConfig)
+class CoreFuzzingDMINoCevNoLogConfig extends Config(
+  new boom.v3.common.WithSpecASan() ++ new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++
+  new CoreFuzzingDMINoLogConfig)
 
 // FireSim FPGA variant: inherits ALL parameters from CoreFuzzingConfig.
 // Adds WithIFTBridge which exports IFT commit/squash records as tile IO for GoldenGate synthesis.

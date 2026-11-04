@@ -347,6 +347,10 @@ class FireSimCoreFuzzingIFTDMILeanCevicheConfig extends Config(new boom.v3.commo
 class FireSimCoreFuzzingIFTDMILeanAllDefConfig extends Config(
   new boom.v3.common.WithCeviche ++ new boom.v3.common.WithSpecASan() ++
   new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++ new FireSimCoreFuzzingIFTDMILeanConfig)
+// No-Ceviche defense set (owner 2026-11-03, RULES C 'NoCev bitstream'): STT + Doppelganger + SpecASan, no Ceviche.
+class FireSimCoreFuzzingIFTDMILeanNoCevConfig extends Config(
+  new boom.v3.common.WithSpecASan() ++ new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++
+  new FireSimCoreFuzzingIFTDMILeanConfig)
 
 // [area-compare 2026-10-26] Clean area/timing comparison configs (owner order 2026-10-26).
 // Same shell as FireSimCoreFuzzingIFTDMILeanConfig, fragment for fragment and in the same
