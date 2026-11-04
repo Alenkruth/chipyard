@@ -10,11 +10,13 @@
 #   - right after the launch the count is re-checked; if another simulator started in the same instant (count > 1),
 #     OUR just-started step is stopped (its process group) before it does work, and the launch is retried at the next gap.
 # Root   : BASE=${CAL_W_BASE:-/data/akrish/scratch/power-cal}; work dir of id = $BASE/<id>, passed to every pilot.sh call as W=$BASE/<id>.
+# C0_SERIAL=1: wait for C0 to end before S1 (peak = one simulator only, e.g. beside builds); default 0 = C0 runs beside S1.
 # Output: one milestone line per event on stdout ("SIMLANE <time> ..."); exit 0 when every id is done,
 #         exit 1 on the first failed step (nothing after it is started).  Nothing is deleted.
 set -u
 HERE=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 PILOT="$HERE/pilot.sh"; BASE=${CAL_W_BASE:-/data/akrish/scratch/power-cal}
+C0_SERIAL=${C0_SERIAL:-0}
 n_sims() { pgrep -f '^\S*(simulator-chipyard|VFireSim)' | wc -l; }
 say() { echo "SIMLANE $(date '+%F %T') $*"; }
 pid_of() { cat "$BASE/$1/logs/$2.pid" 2>/dev/null; }
@@ -41,8 +43,13 @@ for id in "$@"; do
   run_sim "$id" S0 || { say "$id S0 FAILED"; exit 1; }
   CAL_ID=$id W="$BASE/$id" bash "$PILOT" C0 > "$BASE/$id/logs/C0.launch.out" 2>&1 || { say "$id C0 LAUNCH REFUSED"; exit 1; }
   say "$id C0 STARTED pid $(pid_of "$id" C0)"
-  run_sim "$id" S1 || { say "$id S1 FAILED"; exit 1; }
-  rc=$(wait_step "$id" C0); say "$id C0 END rc=$rc $(grep -h C0_RESULT "$BASE/$id/logs/C0.log" 2>/dev/null)"; [ "$rc" = 0 ] || { say "$id C0 FAILED"; exit 1; }
+  if [ "$C0_SERIAL" = 1 ]; then
+    rc=$(wait_step "$id" C0); say "$id C0 END rc=$rc $(grep -h C0_RESULT "$BASE/$id/logs/C0.log" 2>/dev/null)"; [ "$rc" = 0 ] || { say "$id C0 FAILED"; exit 1; }
+    run_sim "$id" S1 || { say "$id S1 FAILED"; exit 1; }
+  else
+    run_sim "$id" S1 || { say "$id S1 FAILED"; exit 1; }
+    rc=$(wait_step "$id" C0); say "$id C0 END rc=$rc $(grep -h C0_RESULT "$BASE/$id/logs/C0.log" 2>/dev/null)"; [ "$rc" = 0 ] || { say "$id C0 FAILED"; exit 1; }
+  fi
   CAL_ID=$id W="$BASE/$id" bash "$PILOT" window > "$BASE/$id/logs/window.out" 2>&1 || { say "$id window FAILED: $(tail -1 "$BASE/$id/logs/window.out")"; exit 1; }
   say "$id window $(grep -h 'R=' "$BASE/$id/logs/window.out" | tail -1)"
   run_sim "$id" S2 || { say "$id S2 FAILED"; exit 1; }
