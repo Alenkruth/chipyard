@@ -85,16 +85,7 @@ object WidthMap {
     "WithNSmallBooms" -> (() => new WithNSmallBooms(1)),
     "WithNMediumBooms" -> (() => new WithNMediumBooms(1)),
     "WithNLargeBooms" -> (() => new WithNLargeBooms(1)),
-    "WithNMegaBooms" -> (() => new WithNMegaBooms(1))).flatMap { case (n, f) =>
-      // 2026-11-02 (power pilot P1): a preset whose parameters no longer elaborate is skipped, not fatal.
-      // Cause: the Doppelganger require at boom parameters.scala:193 (isPow2(decodeWidth), not gated on
-      // enableDoppelganger) rejects the 3-wide WithNLargeBooms. coreWidthOptions (4, 2, 1) never use it;
-      // a needed width without a preset still fails in issueWidths (cand.size == 1).
-      scala.util.Try(coreOf(f())) match {
-        case scala.util.Success(c) => Some(n -> c)
-        case scala.util.Failure(e) => System.err.println(s"WidthMap: preset $n skipped: ${e.getMessage}"); None
-      }
-    }
+    "WithNMegaBooms" -> (() => new WithNMegaBooms(1))).map { case (n, f) => n -> coreOf(f()) }
   val iqNames = Seq(IQT_INT.litValue -> "int", IQT_MEM.litValue -> "mem", IQT_FP.litValue -> "fp")
 
   /** (preset name, iqType -> issueWidth) for a static width-w core built from `fz` */
