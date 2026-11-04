@@ -90,7 +90,12 @@ chk_exec() { if [ -x "$1" ] || command -v "$1" >/dev/null 2>&1; then ok "$2: $1"
 chk_later() { if [ -e "$1" ]; then ok "$2: $1"; elif [ "$DRYRUN" = 1 ]; then pend "$2 (made by an earlier step): $1"; else bad "$2 missing: $1"; fi; }
 chk_env()  { if [ -n "${!1:-}" ]; then ok "$1=${!1}"; else bad "$1 not set"; fi; }
 
-n_builds() { { pgrep -f '^\S*java .*chipyard\.Generator'; pgrep -f '^\S*firtool '; pgrep -f '^\S*unwrapped/lnx64\.o/vivado -mode batch'; } | wc -l; }   # real processes only (bash -c wrappers of a build are not counted)
+n_builds() {   # real processes only (bash -c wrappers are not counted); a counted process with a counted ancestor
+  # (e.g. a FireSim bitstream Vivado and the synth/impl Vivado it spawns via runme.sh) is the same build, counted once
+  local all p q n=0; all=" $( { pgrep -f '^\S*java .*chipyard\.Generator'; pgrep -f '^\S*firtool '; pgrep -f '^\S*unwrapped/lnx64\.o/vivado '; } | tr '\n' ' ')"
+  for p in $all; do q=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+    while [ -n "$q" ] && [ "$q" -gt 1 ]; do case "$all" in *" $q "*) continue 2;; esac; q=$(ps -o ppid= -p "$q" 2>/dev/null | tr -d ' '); done
+    n=$((n+1)); done; echo $n; }
 n_sims()   { pgrep -f '^\S*(simulator-chipyard|VFireSim)' | wc -l; }   # same count as the shared gate (simref/run.sh, gate_exec.sh); wrappers such as timeout/stdbuf are not counted
 chk_common() {
   if [ "$FS_SETUP" = ok ]; then ok "firesim_setup"; else bad "firesim_setup $FS_SETUP"; fi
