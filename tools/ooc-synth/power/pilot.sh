@@ -22,6 +22,7 @@
 #   SLOT_GRANTED=1   required for every step that builds, simulates or synthesizes: the controller grants each slot (plan 3)
 #   GATE_CMD         optional command prefix for simulator launches (the shared gate.lock wrapper of the controller); the script also
 #                    refuses a 3rd simulator (2-sim cap counted from the process table) and a 3rd build (Generator/firtool/Vivado)
+#   B1_J [20]        make -j of the B1 sim build (the controller grants it; e.g. 10 beside bitstream builds)
 #   R A N            window: R testbench cycles per core cycle, A first window core cycle, N cycles (100000); `window` computes them
 #   VIVADO_BIN XILINX_PART OUT_PERIOD_NS [10] CLOCK_NS [1.0, testbench clock period] C0_FROM [20000] C0_CYCLES [1000]
 #   PROBES           space-separated probe net names for V1 (found in V0: $W/v0/probe_candidates.txt)
@@ -76,6 +77,7 @@ LOGS="$W/logs"; BIN="$W/bin"; F2S="$BIN/fst2saif"
 SEED_ARGS="+verilator+seed+1 +verilator+rand+reset+2"
 FST_V="$CY/.conda-env/share/verilator/include/gtkwave"
 OOC_MAX_BUILDS="${OOC_MAX_BUILDS:-2}"; MAX_SIMS="${MAX_SIMS:-2}"
+B1_J="${B1_J:-20}"   # make -j of B1 (the controller may grant less beside other builds, e.g. B1_J=10)
 R="${R:-}"; A="${A:-}"
 [ -f "$W/window.env" ] && . "$W/window.env"          # R A N MAXC written by `window`
 
@@ -177,7 +179,7 @@ step_B1() {
   launch B1 "$(hdr)
 export PATH=$(dirname "$FIRTOOL_BIN"):\$PATH
 cd $CY/sims/verilator
-make -j20 debug CONFIG=$CONFIG VERILATOR_THREADS=20 NUMACTL=1 USE_FST=1 EXTRA_SIM_SOURCES=\"--trace-underscore $POWER/tile_trace.vlt${TRACE_ARGS:+ $TRACE_ARGS}\"
+make -j$B1_J debug CONFIG=$CONFIG VERILATOR_THREADS=20 NUMACTL=1 USE_FST=1 EXTRA_SIM_SOURCES=\"--trace-underscore $POWER/tile_trace.vlt${TRACE_ARGS:+ $TRACE_ARGS}\"
 rc=\$?
 ls -l $SIM
 sha1sum $SIM
