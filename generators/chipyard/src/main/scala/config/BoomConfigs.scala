@@ -349,6 +349,13 @@ class BaselineBoomPowerCalMin4DMIConfig extends Config(new WithPowerCalSizes(
 class BaselineBoomPowerCalHeld2DMIConfig extends Config(new WithPowerCalSizes(
   "btb_sets=64;dc_sets=64;dc_ways=4;fb=32;fprf=48;ftq=16;ic_sets=32;ic_ways=4;iprf=96;iq_fp=16;iq_int=16;iq_mem=16;ldq=24;ras=16;rob=128;stq=24;tage=5;width=2") ++
   new BaselineBoomPowerDMIConfig)
+// Second held-out tile HELD3 (owner 2026-11-03 'Power calibration revision', RULES C; plan
+// claude-artifacts/ooc-synthesis/plans/power-cal-revision-plan.md section 2): small-knob width-2 point, chosen and
+// frozen before the v2 refit. Fuzzer cfg: coreWidth 2, rob 64, fb 24, ftq 16, ras 8, pregFileSize 64 (fprf 40),
+// numIssueSlots 8, ldq 16, stq 16, btbEntries 64 (32 x 2), tage 3, I$ 16 x 2, D$ 32 x 2.
+class BaselineBoomPowerCalHeld3DMIConfig extends Config(new WithPowerCalSizes(
+  "btb_sets=32;dc_sets=32;dc_ways=2;fb=24;fprf=40;ftq=16;ic_sets=16;ic_ways=2;iprf=64;iq_fp=8;iq_int=8;iq_mem=8;ldq=16;ras=8;rob=64;stq=16;tage=3;width=2") ++
+  new BaselineBoomPowerDMIConfig)
 
 // Verilator IFT fuzzer config with DMI pre-execution reconfiguration support.
 // Same hardware as CoreFuzzingConfig. WithDMIDTM exposes a DMI debug port so
