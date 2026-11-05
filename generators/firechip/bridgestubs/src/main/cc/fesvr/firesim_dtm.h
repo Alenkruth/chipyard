@@ -48,6 +48,13 @@ protected:
   void load_mem_write(addr_t addr, size_t nbytes, const void *src) override;
   void load_mem_read(addr_t addr, size_t nbytes, void *dst) override;
 
+  // [ROWTIME 2026-11-05] htif_t::load_payload() asks this before every ELF segment
+  // write. True only when the simulation's +loadmem sideband (simulation.cc
+  // init_dram, after +zero-out-dram) already wrote this same ELF into DRAM, so the
+  // DMI fesvr's own load_program() keeps entry/symbols (tohost, fromhost) but does
+  // not write the image a second time through the LoadMem MMIO path.
+  bool is_address_preloaded(addr_t, size_t) override { return sideband_preloaded; }
+
   // This must be exactly the same as hKey.dataBits in the LoadMem widget
   // See discussion here: https://github.com/firesim/firesim/pull/1401
   // TODO: Avoid hardcoding this value here
@@ -63,6 +70,14 @@ private:
   size_t idle_counts;
   bool no_htif = false;
   bool preload_done = false;
+  // [ROWTIME] +loadmem=<path> of this launch (empty: none), +fastloadmem seen, and the
+  // result of the size + header comparison against the boot binary (load_program()).
+  std::string loadmem_path;
+  bool fastloadmem = false;
+  bool sideband_preloaded = false;
+  // [ROWTIME] +zero-out-dram seen: htif's bss zero-fill (memsz > filesz) is skipped with the
+  // ELF writes, so the skip is only safe when DRAM was zeroed in this launch.
+  bool zero_out_dram = false;
   // +dump-mem=<addr>: the trap dump also reads the two dwords at addr, addr+8 as
   // the HART sees them (e.g. tohost/fromhost), to compare with what TSI sees.
   uint64_t dump_mem_addr = 0;

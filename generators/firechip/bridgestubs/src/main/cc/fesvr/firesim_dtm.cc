@@ -2,6 +2,8 @@
 #include "firesim_dtm.h"
 #include <inttypes.h>
 #include <stdio.h>
+#include <string.h>
+#include <vector>
 
 #define fprintf(stdout, fmt, ...) (0)
 
@@ -22,6 +24,12 @@ firesim_dtm_t::firesim_dtm_t(int argc, char **argv, bool can_have_loadmem)
       no_htif = true;
     if (arg.find("+dump-mem=") == 0)
       dump_mem_addr = strtoull(arg.c_str() + 10, nullptr, 0);
+    if (arg.find("+loadmem=") == 0)
+      loadmem_path = arg.substr(9);
+    if (arg.find("+fastloadmem") == 0)
+      fastloadmem = true;
+    if (arg.find("+zero-out-dram") == 0)
+      zero_out_dram = true;
   }
 
   // always use loadmem if the target supports it
@@ -41,6 +49,33 @@ void firesim_dtm_t::load_program() {
     printf("[dmi-no-htif] DMI fesvr: no ELF load, no HTIF; TSI owns tohost/fromhost\n");
     fflush(stdout);
     return;
+  }
+  // [ROWTIME 2026-11-05] Measured on card 5e (mcf sp_0, 4.9 GB): without this the
+  // ELF that +loadmem already wrote is queued again here and drained through the
+  // LoadMem MMIO path inside ONE dmibridge tick (~337 s, no output, 9.8 GB anon RSS),
+  // right after "loadarch attempting". Skip the writes only when the sideband loaded
+  // the same file: same size and identical first 64 KiB (ELF + program headers and
+  // the start of segment 0). Anything else keeps the full load as before.
+  sideband_preloaded = false;
+  if (has_loadmem && !fastloadmem && zero_out_dram && !loadmem_path.empty() && !target_args().empty()) {
+    const std::string &boot = target_args()[0];
+    FILE *a = fopen(loadmem_path.c_str(), "rb"), *b = fopen(boot.c_str(), "rb");
+    if (a && b) {
+      std::vector<char> ba(65536), bb(65536);
+      fseek(a, 0, SEEK_END); fseek(b, 0, SEEK_END);
+      const long sa = ftell(a), sb = ftell(b);
+      rewind(a); rewind(b);
+      const size_t na = fread(ba.data(), 1, ba.size(), a), nb = fread(bb.data(), 1, bb.size(), b);
+      sideband_preloaded = (sa > 0 && sa == sb && na == nb && na > 0 &&
+                            memcmp(ba.data(), bb.data(), na) == 0);
+    }
+    if (a) fclose(a);
+    if (b) fclose(b);
+    printf("[loadmem-sideband] DMI fesvr: %s\n",
+           sideband_preloaded
+               ? "boot ELF == +loadmem image (size + 64 KiB header); ELF writes skipped, symbols kept"
+               : "boot ELF != +loadmem image; full ELF load through LoadMem");
+    fflush(stdout);
   }
   testchip_dtm_t::load_program();
 }
