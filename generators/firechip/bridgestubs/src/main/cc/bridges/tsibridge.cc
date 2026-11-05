@@ -225,8 +225,19 @@ void tsibridge_t::tick() {
   if (!read(mmio_addrs.done))
     return;
   if (wait_ticks != 0) {
+    // [MCFLOG 2026-11-05] print the park ONCE, not per tick.  With
+    // +tsi-wait-ticks=2100000000 the per-tick line was ~15M lines (~480 MB) per
+    // 2e9-cycle launch, ~0.9 MB/s into the uart pty.  stdout shares the pty file
+    // description with stdin, which uart.cc sets O_NONBLOCK, so whenever the
+    // script/screen reader falls behind, printf gets EAGAIN and glibc drops the
+    // text -- that is what erased the loadarch restore lines of mcf rows 6-9.
+    static bool park_announced = false;
+    if (!park_announced) {
+      printf("tsibridge_t::tick parked for %llu ticks (+tsi-wait-ticks); per-tick lines suppressed\n",
+             (unsigned long long)wait_ticks);
+      park_announced = true;
+    }
     wait_ticks -= 1;
-    printf("tsibridge_t::tick skipping tick\n");
     go();
     return;
   }
