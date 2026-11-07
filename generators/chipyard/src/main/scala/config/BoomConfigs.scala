@@ -552,3 +552,82 @@ class StockBoomV3CheckpointCommitLogConfig extends Config(
   new boom.v3.common.WithNMegaBooms(1) ++
   new chipyard.config.WithSystemBusWidth(128) ++
   new chipyard.config.AbstractConfig)
+
+// ---------------------------------------------------------------------------------------------
+// [masked-vs-static 2026-11-06] Static (stock-parameter) BOOM points with IFT on, defenses off,
+// plus the masked twin under its own name. Plan: claude-artifacts/ift-overhaul/execution/task-reports/
+// masked-vs-static-20261106/RUNLIST.md (sections 1, 10). Verilator debug builds only.
+// No WithReconf (static), no WithSTT/WithDoppelganger/WithSpecASan/WithCeviche, no WithIFTOracle
+// (fetchWidth 4 cannot carry the oracle outputs, RUNLIST P4; the oracle adds outputs only).
+// The commit-log printf stays ON in every point (the tracker summary is parsed from it); Mega's
+// branch printf is turned OFF (it interleaves with the commit log).
+// ---------------------------------------------------------------------------------------------
+
+// Additive: turns the branch printf off (WithBoomBranchPrintf has no inverse). Place LEFT of the core mixin.
+class WithoutBoomBranchPrintf extends Config((site, here, up) => {
+  case freechips.rocketchip.subsystem.TilesLocated(freechips.rocketchip.subsystem.InSubsystem) =>
+    up(freechips.rocketchip.subsystem.TilesLocated(freechips.rocketchip.subsystem.InSubsystem), site) map {
+      case tp: boom.v3.common.BoomTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(core = tp.tileParams.core.copy(
+        enableBranchPrintf = false
+      )))
+      case other => other
+    }
+})
+
+// Mega snapped to the masked core's option values: IQ 32/32/32, issue 2/4/1, FP PRF 128/64 (int stays 128), FTQ 32.
+// Place LEFT of WithNMegaBooms. issueParams order in the mixin is MEM, INT, FP.
+class WithMegaExactSnap extends Config((site, here, up) => {
+  case freechips.rocketchip.subsystem.TilesLocated(freechips.rocketchip.subsystem.InSubsystem) =>
+    up(freechips.rocketchip.subsystem.TilesLocated(freechips.rocketchip.subsystem.InSubsystem), site) map {
+      case tp: boom.v3.common.BoomTileAttachParams =>
+        val c = tp.tileParams.core
+        require(c.issueParams.size == 3)
+        tp.copy(tileParams = tp.tileParams.copy(core = c.copy(
+          issueParams = Seq(
+            c.issueParams(0).copy(numEntries = 32),
+            c.issueParams(1).copy(numEntries = 32),
+            c.issueParams(2).copy(numEntries = 32, issueWidth = 1)),
+          numFpPhysRegisters = 64,
+          ftq = c.ftq.copy(nEntries = 32)
+        )))
+      case other => other
+    }
+})
+
+// Masked twin: exactly CoreFuzzingDMIConfig's fragments, own name so its debug build lands in its own
+// generated-src/simulator and never rebuilds the shared CoreFuzzingDMIConfig sim.
+class MaskedTwinDMIConfig extends Config(new CoreFuzzingDMIConfig)
+
+class SmallBoomIFTStaticDMIConfig extends Config(
+  new chipyard.harness.WithSerialTLTiedOff ++
+  new chipyard.config.WithDMIDTM ++
+  new boom.v3.common.WithoutMemtracePrintf ++
+  new chipyard.WithL2Wipe ++
+  new boom.v3.common.WithIFT ++
+  new boom.v3.common.WithNSmallBooms(1) ++          // commit-log printf already in the mixin; 64-bit bus
+  new chipyard.config.AbstractConfig)
+
+class MediumBoomIFTStaticDMIConfig extends Config(
+  new chipyard.harness.WithSerialTLTiedOff ++
+  new chipyard.config.WithDMIDTM ++
+  new boom.v3.common.WithoutMemtracePrintf ++
+  new chipyard.WithL2Wipe ++
+  new boom.v3.common.WithIFT ++
+  new boom.v3.common.WithBoomCommitLogPrintf ++     // Medium mixin has none; the records need it
+  new boom.v3.common.WithNMediumBooms(1) ++         // 64-bit bus
+  new chipyard.config.AbstractConfig)
+
+class MegaBoomIFTStaticDMIConfig extends Config(
+  new chipyard.harness.WithSerialTLTiedOff ++
+  new chipyard.config.WithDMIDTM ++
+  new boom.v3.common.WithoutMemtracePrintf ++
+  new chipyard.WithL2Wipe ++
+  new boom.v3.common.WithIFT ++
+  new chipyard.WithoutBoomBranchPrintf ++
+  new boom.v3.common.WithNMegaBooms(1) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig)
+
+class MegaExactBoomIFTStaticDMIConfig extends Config(
+  new chipyard.WithMegaExactSnap ++
+  new MegaBoomIFTStaticDMIConfig)
