@@ -94,6 +94,21 @@ void ift_bridge_t::init() {
   // [DRAINHIST] wall-time origin; the interval snapshot starts here too.
   dh_start_ns = dh_iv_ns = dh_now_ns();
   dh_next_print_ns = dh_start_ns + dh_period_ns;
+  // [INITDRAIN] Read and discard every beat still queued from the previous launch's exit
+  // loop, so the bin holds only this launch's records.  init() runs before the first STEP
+  // (the target is stopped, DONE=1, so the queue cannot grow), and the loop ends on the
+  // first empty pull or after at most 4 x stream_depth pulls.
+  {
+    const size_t max_bytes = static_cast<size_t>(stream_depth) * STREAM_WIDTH_BYTES;
+    uint64_t stale_beats = 0;
+    for (int i = 0; i < 4 * stream_depth; ++i) {
+      const size_t got = pull(stream_idx, dma_buf, max_bytes, STREAM_WIDTH_BYTES);
+      if (got == 0 || got > max_bytes) break;
+      stale_beats += got / STREAM_WIDTH_BYTES;
+    }
+    fprintf(stderr, "[IFTBridge] init: discarded %" PRIu64 " stale beats from a previous "
+                    "launch\n", stale_beats);
+  }
   if (drain_only) return;
   outfile = fopen(outfilename.c_str(), "wb");
   if (!outfile) {
