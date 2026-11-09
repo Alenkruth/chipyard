@@ -18,8 +18,17 @@ Method  : both trees are parsed with scala/extract_rtl.py (parse(): module texts
           Memory wrappers are leaves.  The memory children of a parent are named by order of appearance
           (@mem0, @mem1, ...) in both trees, so OOC `table`/`table_ext` pairs with sim `table_0`; the instance
           name and its port wires (`_<inst>_R0_data`) are renamed to that canonical name inside the parent
-          body, and a constant `.W0_en (1'h1)` connection of a memory instance is dropped (the sim wrapper
-          has no W0_en port).  Dead sim-only logic: a sim memory instance whose read data port (R*_data,
+          body, and a constant `.W0_en (1'h1)` / `.R0_en (1'h1)` connection of a memory instance is dropped
+          (the sim wrapper has no such port; it ties the macro's enable to 1'h1 inside).  The read ports of a
+          memory with more than one read port are renumbered in the order of their (addr, en, clk)
+          connections (ties keep the original order), connections and `_<inst>_R<k>_data` wires alike: the
+          two firtool lowerings (inline `<name>_<D>x<W>` module vs --repl-seq-mem wrapper) can number the
+          same read ports differently, and every read port of a firtool memory behaves the same.  Plain
+          declarations (`wire [W] x`, no `=`) are compared as a sorted block (their order has no meaning
+          and follows the memory port numbering).
+          Black-box resource modules of the sim build (gen-collateral/firrtl_black_box_resource_files.f,
+          *.v, e.g. CevCamRam, plusarg_reader) are parsed too: the OOC side inlines them into its *.sv.
+          Dead sim-only logic: a sim memory instance whose read data port (R*_data,
           RW*_rdata) is absent or unconnected is a dead sim-only memory: it is counted and listed separately
           and removed with everything that only feeds it (a port/wire whose live sinks are all dead
           statements or dead connections is dead; its declaration, its drivers and the connections to a dead
@@ -48,7 +57,8 @@ ASSIGN = re.compile(r"^(?:assign\s+)?([A-Za-z_]\w*)\s*(?:\[[^\]]*\]\s*)*(?:<=|=)
 DECL = re.compile(r"^(?:wire|reg|logic|integer)\b")
 CONN = re.compile(r"\.\s*(\w+)\s*\(")
 RDATA = re.compile(r"^(?:R\d+_data|RW\d+_rdata)$")
-WEN1 = re.compile(r"^W\d+_en$")
+WEN1 = re.compile(r"^(?:W|R)\d+_en$")
+RPORT = re.compile(r"^R(\d+)_(\w+)$")
 MEMW = re.compile(r"^_(.+?)_((?:RW|R|W)\d+_\w+)$")
 
 
@@ -310,15 +320,31 @@ class Tree:
                 b = iname[:-4] if iname.endswith("_ext") else iname
                 for s in {iname, b, re.sub(r"_\d+$", "", iname), re.sub(r"_\d+$", "", b)}:
                     stems.setdefault(s, c)
+        perm = {}   # canonical memory name -> {old read port index: new index}
         def ren(tok):
             if tok in exact:
                 return exact[tok]
             mm = MEMW.match(tok)
             if mm and mm.group(1) in stems:
-                return "_%s_%s" % (stems[mm.group(1)], mm.group(2))
+                c, pt = stems[mm.group(1)], mm.group(2)
+                rp = RPORT.match(pt)
+                if rp and c in perm:
+                    pt = "R%d_%s" % (perm[c].get(int(rp.group(1)), int(rp.group(1))), rp.group(2))
+                return "_%s_%s" % (c, pt)
             return tok
         def rn(s):
             return IDENT.sub(lambda mo: ren(mo.group(0)), s) if (exact or stems) else s
+        for (_, typ, iname, conns) in inst:
+            if iname not in exact:
+                continue
+            grp = {}
+            for p, e in conns:
+                rp = RPORT.match(p)
+                if rp and rp.group(2) in ("addr", "en", "clk"):
+                    grp.setdefault(int(rp.group(1)), {})[rp.group(2)] = e.strip()
+            if len(grp) > 1:
+                key = lambda i: (rn(grp[i].get("addr", "")), rn(grp[i].get("en", "1'h1")), rn(grp[i].get("clk", "")), i)
+                perm[exact[iname]] = {old: new for new, old in enumerate(sorted(grp, key=key))}
         out = []
         ports = hdr_ports(self.hdr[m])
         for it in self.hdr[m]:
@@ -329,6 +355,7 @@ class Tree:
                 continue
             out.append(it)
         instat = {k2: (typ, iname, conns) for (k2, typ, iname, conns) in inst}
+        nhdr, decls = len(out), []
         for k2, s in enumerate(stm):
             if k2 in dstmt:
                 continue
@@ -336,18 +363,31 @@ class Tree:
                 typ, iname, conns = instat[k2]
                 ism = self.mem_of(typ) is not None
                 out.append("@M %s (" % rn(iname))
-                for p, e in conns:
+                pm = perm.get(exact.get(iname), {}) if ism else {}
+                items = []
+                for pos, (p, e) in enumerate(conns):
                     if (k2, p) in dconn:
                         continue
                     if ism and WEN1.match(p) and e.strip() == "1'h1":
                         continue
+                    rp = RPORT.match(p) if pm else None
+                    if rp:
+                        nk = pm.get(int(rp.group(1)), int(rp.group(1)))
+                        items.append(((0, nk, pos), "R%d_%s" % (nk, rp.group(2)), e))
+                    else:
+                        items.append(((1, 0, pos), p, e))
+                if pm:
+                    items.sort(key=lambda t: t[0])
+                for _, p, e in items:
                     out.append(".%s (%s)" % (p, rn(e)))
                 out.append(")")
                 continue
             if DECL.match(s) and dids and any(nm in dids for nm in decl_names(s)):
                 continue   # (a `wire x = expr` of a dead x is already in dstmt)
+            if DECL.match(s) and "=" not in s:
+                decls.append(rn(s)); continue   # plain declaration: its position carries no meaning
             out.append(rn(s))
-        return out
+        return out[:nhdr] + sorted(decls) + out[nhdr:]
 
 
 def parse_conf(path):
@@ -419,6 +459,19 @@ def main():
     conf = parse_conf(conf_path)
     omods, _, oskip = load_mods(ofiles, "ooc")
     smods, _, sskip = load_mods(sfiles, "sim")
+    # black-box resource modules (CevCamRam.v, plusarg_reader.v, ...): firtool inlines them into the OOC *.sv
+    bbf = os.path.join(a.sim, "gen-collateral", "firrtl_black_box_resource_files.f")
+    bfiles = []
+    if os.path.exists(bbf):
+        for ln in open(bbf):
+            f = os.path.normpath(os.path.join(a.sim, "gen-collateral", ln.strip()))
+            if ln.strip() and f.endswith((".v", ".sv")) and f not in sfiles and os.path.exists(f):
+                bfiles.append(f)
+    bmods, _, bskip = load_mods(bfiles, "sim black-box")
+    for k in bmods:
+        if k in smods:
+            sys.exit("sim: duplicate module %s (black-box resource)" % k)
+        smods[k] = bmods[k]
     if a.top not in omods: print("top %s not in ooc" % a.top, file=sys.stderr); return 2
     if a.top not in smods: print("top %s not in sim" % a.top, file=sys.stderr); return 2
     ot = Tree(omods, set(omods))
@@ -453,6 +506,7 @@ def main():
     print("tile top            : %s" % a.top)
     print("ooc modules / paths : %d / %d   (skipped files: %d)" % (len(omods), len(opaths), len(oskip)))
     print("sim modules / paths : %d / %d   (skipped files: %d)   mems.conf: %s (%d macros)" % (len(smods), len(spaths), len(sskip), os.path.basename(conf_path), len(conf)))
+    print("sim black-box files : %d parsed (%d modules), %d without module-only text (not used)" % (len(bfiles) - len(bskip), len(bmods), len(bskip)))
     print("logic paths equal   : %d" % logic_eq)
     print("logic paths DIFFER  : %d   (distinct module pairs: %d)" % (len(logic_report), len(pair_diff)))
     print("memory paths equal  : %d" % mem_eq)
