@@ -23,10 +23,16 @@
 #   GATE_CMD         optional command prefix for simulator launches (the shared gate.lock wrapper of the controller); the script also
 #                    refuses a 3rd simulator (2-sim cap counted from the process table) and a 3rd build (Generator/firtool/Vivado)
 #   B1_J [20]        make -j of the B1 sim build (the controller grants it; e.g. 10 beside bitstream builds)
+#   B1_VT [20]       VERILATOR_THREADS of the B1 sim build (compiled into the simulator; a sim books VT + 2 threads incl. the FST writer;
+#                    e.g. 16 when the controller grants <= 20 threads)
 #   R A N            window: R testbench cycles per core cycle, A first window core cycle, N cycles (100000); `window` computes them
 #   VIVADO_BIN XILINX_PART OUT_PERIOD_NS [10] CLOCK_NS [1.0, testbench clock period] C0_FROM [20000] C0_CYCLES [1000]
 #   PROBES           space-separated probe net names for V1 (found in V0: $W/v0/probe_candidates.txt)
 #   FIND_PATTERNS    V0 net-name search patterns ["*csr* *reset*"]
+#   RCSR             reconfig-CSR file; S0/S1/S2 append ` +reconfig_csrs=$RCSR` after the ELF and log RCSR_FILE/RCSR_SHA1/RCSR_LOADED.
+#                    With CAL_ID it comes from the line RCSR_<id>=<file> of the CAL_FILE. CAL_FILE=<file> selects another id table.
+#   PT_PARAMS=fir    (3rd column of a CAL_FILE row) defense power point: POINT=$W/ooc/points/Tile/fir/$CONFIG, RTL made by step P1F
+#                    (firtool + extract_rtl.py on the sim build's own FIRRTL); a FIR point without RCSR fails the check.
 # Outputs : everything under $W (sw/ sw/b2/ ooc/ logs/ v0/ v1/ v1_nou/ s0.fst s2.fst s2.saif s2_nou.saif s2_profile.csv window.env ...).
 #           Nothing is ever deleted by this script.
 # Binding rules kept here: firesim_setup before set -u; plusargs after the ELF; fixed seed on S1 and S2; never `make verilog`;
@@ -53,6 +59,7 @@ if [ -n "${CAL_ID:-}" ]; then
   CONFIG="${CONFIG:-${_cal_row%% *}}"; PT_PARAMS="${PT_PARAMS:-${_cal_row##* }}"
   W="${W:-$(_cal_var CAL_W_BASE)/$CAL_ID}"; ELF="${ELF:-$(_cal_var CAL_ELF)}"
   TRACE_ARGS="${TRACE_ARGS:-$(_cal_var CAL_TRACE_ARGS)}"; S1_MAXC="${S1_MAXC:-$(_cal_var CAL_S1_MAXC)}"
+  RCSR="${RCSR:-$(_cal_var "RCSR_$CAL_ID")}"   # defense power: reconfig-CSR file of this id (line RCSR_<id>=<file> in the CAL_FILE)
 fi
 W="${W:-/data/akrish/scratch/power-pilot}"
 CY="${CY:-/home/jht9sy/work/chipyard}"
@@ -62,7 +69,9 @@ PT_PARAMS="${PT_PARAMS:-$K,width=4}"
 TRACE_ARGS="${TRACE_ARGS:-}"; S1_MAXC="${S1_MAXC:-4000000}"   # workload is dhrystone only: no RUN_TAG
 SIM="${SIM:-$CY/sims/verilator/simulator-chipyard.harness-$CONFIG-debug}"
 GENSRC="${GENSRC:-$CY/sims/verilator/generated-src/chipyard.harness.TestHarness.$CONFIG}"
-POINT="${POINT:-$W/ooc/points/Tile/base/$PT_PARAMS}"
+LONG="chipyard.harness.TestHarness.$CONFIG"
+# PT_PARAMS=fir (defense power rows): the tile RTL is cut from the sim build's own FIRRTL by P1F, not elaborated by elaborate.sh
+if [ "$PT_PARAMS" = fir ]; then POINT="${POINT:-$W/ooc/points/Tile/fir/$CONFIG}"; else POINT="${POINT:-$W/ooc/points/Tile/base/$PT_PARAMS}"; fi
 ELF="${ELF:-$W/sw/dhrystone1500.riscv}"
 TILE_SCOPE="${TILE_SCOPE:-TOP/TestDriver/testHarness/chiptop0/system/tile_prci_domain/element_reset_domain_boom_tile}"
 OUT_PERIOD_NS="${OUT_PERIOD_NS:-10}"; CLOCK_NS="${CLOCK_NS:-1.0}"; N="${N:-100000}"
@@ -75,8 +84,10 @@ FIND_PATTERNS="${FIND_PATTERNS:-*csr* *reset*}"; PROBES="${PROBES:-}"
 POWER="$CY/tools/ooc-synth/power"; TOOLS="$CY/tools/ooc-synth"
 LOGS="$W/logs"; BIN="$W/bin"; F2S="$BIN/fst2saif"
 SEED_ARGS="+verilator+seed+1 +verilator+rand+reset+2"
+RCSR="${RCSR:-}"; RCSR_ARG="${RCSR:+ +reconfig_csrs=$RCSR}"   # DTM delivers these CSR writes before the program starts (plusarg after the ELF)
 FST_V="$CY/.conda-env/share/verilator/include/gtkwave"
 OOC_MAX_BUILDS="${OOC_MAX_BUILDS:-2}"; MAX_SIMS="${MAX_SIMS:-2}"
+B1_VT="${B1_VT:-20}"   # VERILATOR_THREADS of B1 (default 20 = unchanged)
 B1_J="${B1_J:-20}"   # make -j of B1 (the controller may grant less beside other builds, e.g. B1_J=10)
 R="${R:-}"; A="${A:-}"
 [ -f "$W/window.env" ] && . "$W/window.env"          # R A N MAXC written by `window`
@@ -138,6 +149,15 @@ launch() {
   say "STEP $step STARTED pid=$(cat "$LOGS/$step.pid") log=$LOGS/$step.log"
 }
 hdr() { printf 'set -u\ncd %q\n' "$CY"; }
+# reconfig-CSR file (defense power): a FIR point (PT_PARAMS=fir) must name one, else the run would silently be undefended
+chk_rcsr() {
+  if [ -n "$RCSR" ]; then chk_file "$RCSR" "reconfig_csrs file"
+  elif [ "$PT_PARAMS" = fir ]; then bad "RCSR not set for a FIR point (line RCSR_${CAL_ID:-<id>}=<file> in the CAL_FILE, or env RCSR)"
+  else echo "  note    RCSR empty: no +reconfig_csrs plusarg"; fi
+}
+# lines appended to a sim step's script: which file, its sha1, and the DTM's 'loaded N writes' proof (0 = the file was not loaded)
+rcsr_log() { [ -n "$RCSR" ] || return 0
+  printf 'echo RCSR_FILE=%q RCSR_SHA1=$(sha1sum %q | cut -c1-40)\necho RCSR_LOADED=$(grep -c "reconfig_csrs: loaded" %q)\n' "$RCSR" "$RCSR" "$LOGS/$1.log"; }
 build_f2s_cmd() { printf 'mkdir -p %q\ngcc -O2 -DFST_CONFIG_INCLUDE=%q -o %q %q %q/fstapi.c %q/lz4.c %q/fastlz.c -I%q -lz -lpthread -lm || exit 1\n' "$BIN" '"fst_config.h"' "$F2S" "$POWER/fst2saif.c" "$FST_V" "$FST_V" "$FST_V" "$FST_V"; }
 chk_f2s_src() {
   chk_file "$POWER/fst2saif.c" "converter source"; chk_file "$FST_V/fstapi.c" "FST library"; chk_exec gcc "gcc"
@@ -179,7 +199,7 @@ step_B1() {
   launch B1 "$(hdr)
 export PATH=$(dirname "$FIRTOOL_BIN"):\$PATH
 cd $CY/sims/verilator
-make -j$B1_J debug CONFIG=$CONFIG VERILATOR_THREADS=20 NUMACTL=1 USE_FST=1 EXTRA_SIM_SOURCES=\"--trace-underscore $POWER/tile_trace.vlt${TRACE_ARGS:+ $TRACE_ARGS}\"
+make -j$B1_J debug CONFIG=$CONFIG VERILATOR_THREADS=$B1_VT NUMACTL=1 USE_FST=1 EXTRA_SIM_SOURCES=\"--trace-underscore $POWER/tile_trace.vlt${TRACE_ARGS:+ $TRACE_ARGS}\"
 rc=\$?
 ls -l $SIM
 sha1sum $SIM
@@ -218,6 +238,10 @@ sha1sum $ELF"
 step_P1() {
   say "P1 fresh OOC elaboration (Tile base, width 4)"
   chk_common; chk_slot build
+  if [ "$PT_PARAMS" = fir ]; then   # FIR points get their RTL from P1F; elaborate.sh has no such point
+    if [ "$DRYRUN" = 1 ]; then echo "  note    PT_PARAMS=fir: P1 does not apply to this point (P1F makes its RTL); a real P1 refuses"
+    else bad "PT_PARAMS=fir: P1 (elaborate.sh) does not apply; run P1F"; fi
+  fi
   chk_file "$TOOLS/elaborate.sh" "elaborate.sh"; chk_exec "$FIRTOOL_BIN" "firtool"
   chk_later "$SIM" "B1 simulator (P1 must run after B1: same jar)"
   if [ -z "${OOC_ALLOW_STALE_JAR:-}" ]; then ok "stale-jar gate ON (OOC_ALLOW_STALE_JAR unset)"; else bad "OOC_ALLOW_STALE_JAR is set; the gate must stay on"; fi
@@ -228,6 +252,39 @@ $TOOLS/elaborate.sh Tile base \"$PT_PARAMS\"
 rc=\$?
 echo P1_RTL_SHA1=\$(python3 -I -c \"import json;print(json.load(open('$POINT/rtl/elab.json'))['rtl_sha1'])\" 2>&1)   # Nov 1 point: 4be340abb551...
 exit \$rc"
+}
+step_P1F() {
+  say "P1F tile RTL from the sim build's own FIRRTL (firtool + extract_rtl.py; defense power points, no elaborate.sh)"
+  chk_common; chk_slot build
+  chk_exec "$FIRTOOL_BIN" "firtool"; chk_exec taskset "taskset"; chk_file "$TOOLS/scala/extract_rtl.py" "extract_rtl.py"
+  local fir="$GENSRC/$LONG.fir" anno="$GENSRC/$LONG.appended.anno.json" low="$GENSRC/.mfc_lowering_options"
+  local def_low=emittedLineLength=2048,noAlwaysComb,disallowLocalVariables,verifLabels,disallowPortDeclSharing,locationInfoStyle=wrapInAtSquareBracket
+  chk_later "$fir" "B1 FIRRTL"; chk_later "$anno" "B1 appended annotations"
+  if [ -e "$POINT/rtl" ]; then   # any rtl/ (an earlier P1F, or an elaborate.sh point of a calibration root) is never overwritten
+    if [ "$DRYRUN" = 1 ]; then echo "  note    $POINT/rtl exists: a real P1F would refuse (nothing is overwritten)"
+    else bad "$POINT/rtl exists: nothing is overwritten; move the point away yourself"; fi
+  fi
+  [ "$PT_PARAMS" = fir ] || echo "  note    PT_PARAMS=$PT_PARAMS (not 'fir'): POINT=$POINT"
+  launch P1F "$(hdr)
+P=$POINT; mkdir -p \$P/rtl
+LOW=\$(cat $low 2>/dev/null || echo $def_low)   # the sim's own lowering options (common.mk MFC_LOWERING_OPTIONS)
+echo P1F_LOWERING=\$LOW
+# the sim's own firtool call (common.mk SFC_MFC_TARGETS) minus --repl-seq-mem and --split-verilog: Vivado infers the memories as in the bitstream
+taskset -c 0-3 $FIRTOOL_BIN --format=fir --warn-on-unprocessed-annotations --disable-annotation-classless --disable-annotation-unknown --lowering-options=\$LOW --annotation-file=$anno -o \$P/ooc.sv $fir > \$P/firtool.log 2>&1 || { echo P1F_FIRTOOL_FAIL; exit 1; }
+python3 -I $TOOLS/scala/extract_rtl.py find \$P/ooc.sv element_reset_domain_boom_tile > \$P/find.txt 2>&1 || { echo P1F_FIND_FAIL; exit 1; }
+python3 -I $TOOLS/scala/extract_rtl.py emit \$P/ooc.sv element_reset_domain_boom_tile \$P/rtl > \$P/emit.log 2>&1 || { echo P1F_EMIT_FAIL; exit 1; }
+python3 -I - \$P/rtl $fir $anno $FIRTOOL_BIN \$P/ooc.sv <<'PY'
+import hashlib, json, os, subprocess, sys
+rtl, fir, anno, ft, sv = sys.argv[1:6]
+sha = lambda f: hashlib.sha1(open(f, 'rb').read()).hexdigest()
+d = {'kind': 'fir-extract (P1F)', 'fir': fir, 'fir_sha1': sha(fir), 'anno': anno, 'anno_sha1': sha(anno), 'ooc_sv_sha1': sha(sv),
+     'firtool': ft, 'firtool_sha1': sha(ft), 'firtool_version': subprocess.run([ft, '--version'], capture_output=True, text=True).stdout.split('\n')[0],
+     'rtl_files': {f: sha(os.path.join(rtl, f)) for f in sorted(os.listdir(rtl)) if f != 'fir_elab.json'}}
+json.dump(d, open(os.path.join(rtl, 'fir_elab.json'), 'w'), indent=1, sort_keys=True)
+print('P1F_RTL_FILES=%d P1F_FIR_SHA1=%s' % (len(d['rtl_files']), d['fir_sha1'][:12]))
+PY
+echo P1F_TOP=\$(tr -d ' \\t\\r\\n' < \$P/rtl/top.txt)
+exit 0"
 }
 step_P2() {
   say "P2 synthesis + post-synthesis checkpoint (vectorless power, OOC_CHECKPOINT=1)"
@@ -257,12 +314,13 @@ python3 -I $POWER/tile_equiv.py --ooc \"$POINT/rtl\" --sim $GENSRC"
 }
 step_S0() {
   say "S0 smoke trace (60000 testbench cycles)"
-  chk_common; chk_slot sim; chk_f2s_src
+  chk_common; chk_slot sim; chk_f2s_src; chk_rcsr
   chk_later "$SIM" "B1 simulator"; chk_later "$ELF" "B2 dhrystone1500.riscv"
   launch S0 "$(hdr)
 mkdir -p $W
-$GATE_CMD /usr/bin/time -v -o $LOGS/S0.time $SIM $ELF +verbose +max-cycles=60000 $SEED_ARGS +vcdfile=$W/s0.fst
+$GATE_CMD /usr/bin/time -v -o $LOGS/S0.time $SIM $ELF +verbose +max-cycles=60000 $SEED_ARGS$RCSR_ARG +vcdfile=$W/s0.fst
 echo S0_SIM_RC=\$?
+$(rcsr_log S0)
 ls -l $W/s0.fst; grep -E 'Elapsed|Maximum resident' $LOGS/S0.time
 $(build_f2s_cmd)
 $F2S --fst $W/s0.fst --list-scopes > $W/s0.scopes.txt; echo S0_SCOPES=\$(wc -l < $W/s0.scopes.txt)
@@ -283,11 +341,12 @@ echo C0_CLOCK_TC=\$(grep -m1 '^ *(clock ' $W/c0.saif | sed 's/.*(TC \\([0-9]*\\)
 }
 step_S1() {
   say "S1 untraced reference run (PASSED line, T_pass, mcycle)"
-  chk_common; chk_slot sim
+  chk_common; chk_slot sim; chk_rcsr
   chk_later "$SIM" "B1 simulator"; chk_later "$ELF" "B2 dhrystone1500.riscv"
   launch S1 "$(hdr)
-$GATE_CMD /usr/bin/time -v -o $LOGS/S1.time $SIM $ELF +verbose +max-cycles=$S1_MAXC $SEED_ARGS
+$GATE_CMD /usr/bin/time -v -o $LOGS/S1.time $SIM $ELF +verbose +max-cycles=$S1_MAXC $SEED_ARGS$RCSR_ARG
 echo S1_SIM_RC=\$?
+$(rcsr_log S1)
 grep -E 'Elapsed|Maximum resident' $LOGS/S1.time"
 }
 step_window() {
@@ -307,12 +366,13 @@ step_window() {
 }
 step_S2() {
   say "S2 traced run (FST of boot + window)"
-  chk_common; chk_slot sim; need_window
+  chk_common; chk_slot sim; need_window; chk_rcsr
   chk_later "$SIM" "B1 simulator"; chk_later "$ELF" "B2 dhrystone1500.riscv"
   local maxc="${MAXC:-MAXC_FROM_WINDOW}"
   launch S2 "$(hdr)
-$GATE_CMD /usr/bin/time -v -o $LOGS/S2.time $SIM $ELF +verbose +max-cycles=$maxc $SEED_ARGS +vcdfile=$W/s2.fst
+$GATE_CMD /usr/bin/time -v -o $LOGS/S2.time $SIM $ELF +verbose +max-cycles=$maxc $SEED_ARGS$RCSR_ARG +vcdfile=$W/s2.fst
 echo S2_SIM_RC=\$?   # a +max-cycles stop is the expected ending (timeout line, closed FST)
+$(rcsr_log S2)
 ls -l $W/s2.fst; grep -E 'Elapsed|Maximum resident' $LOGS/S2.time
 tail -3 $LOGS/S2.log"
 }
@@ -367,7 +427,7 @@ echo V1_ACTIVITY_NOU=\$(grep -m1 'Dynamic (W)' $W/v1_nou/saif.rpt)"
 }
 step_status() {
   local s pid rc t0 t1 alive
-  for s in B1 B2 P1 P2 P3 S0 C0 S1 S2 C1 V0 V1; do
+  for s in B1 B2 P1 P1F P2 P3 S0 C0 S1 S2 C1 V0 V1; do
     if [ ! -e "$LOGS/$s.start" ]; then printf '%-3s not started\n' "$s"; continue; fi
     rc="-"; alive=no
     pid=$(cat "$LOGS/$s.pid" 2>/dev/null); if kill -0 "$pid" 2>/dev/null; then alive=yes; fi
@@ -391,6 +451,7 @@ step_list() {
 cat <<'EOF'
 P0 preflight record (foreground)          B1 sim build (FST, tile trace)        B2 dhrystone-1500 copy
 P1 fresh OOC elaboration                  P2 synthesis + checkpoint (Vivado)    P3 tile equivalence
+P1F tile RTL from the sim's own FIRRTL (defense power points, PT_PARAMS=fir; replaces P1)
 S0 smoke trace                            C0 converter check vs reference       S1 untraced reference run
 window (R, A, N, MAXC)                    S2 traced run                         C1 conversion (2 SAIFs)
 V0 naming check (smoke SAIF)              V1 activity power (2 SAIFs)           status | wait <step> | check
@@ -401,13 +462,13 @@ EOF
 cmd="${1:-}"; shift || true
 rc=0
 case "$cmd" in
-  P0|B1|B2|P1|P2|P3|S0|C0|S1|S2|C1|V0|V1|window) "step_$cmd"; rc=$? ;;
+  P0|B1|B2|P1|P1F|P2|P3|S0|C0|S1|S2|C1|V0|V1|window) "step_$cmd"; rc=$? ;;
   status) step_status; exit 0 ;;
   wait) step_wait "${1:-}" ;;
   list) step_list; exit 0 ;;
   check)
     DRYRUN=1
-    for s in P0 B1 B2 P1 P2 P3 S0 C0 S1 window S2 C1 V0 V1; do echo; "step_$s"; done
+    for s in P0 B1 B2 P1 P1F P2 P3 S0 C0 S1 window S2 C1 V0 V1; do echo; "step_$s"; done
     echo; say "DRYRUN SUMMARY ok=$NOK pending=$NPEND FAIL=$NFAIL (nothing launched)"
     if [ "$NFAIL" -eq 0 ]; then exit 0; else exit 1; fi ;;
   *) sed -n 2,29p "$0"; exit 2 ;;
