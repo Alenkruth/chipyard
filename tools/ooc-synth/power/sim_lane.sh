@@ -60,6 +60,9 @@ if [ "${DRYRUN:-0}" = 1 ]; then
   say "DRYRUN SUMMARY steps_with_FAIL=$nf (nothing launched)"; [ "$nf" -eq 0 ]; exit $?
 fi
 for id in "$@"; do
+  # pilot.sh creates $W/logs only inside the step, but the launch redirects below write there first:
+  # create it here so an id with no earlier step (no P0/B1) does not stop the lane at S0 (defect 2026-11-07 18:4x)
+  mkdir -p "$BASE/$id/logs" || { say "$id cannot create $BASE/$id/logs"; exit 1; }
   run_sim "$id" S0 || { say "$id S0 FAILED"; exit 1; }
   CAL_ID=$id W="$BASE/$id" bash "$PILOT" C0 > "$BASE/$id/logs/C0.launch.out" 2>&1 || { say "$id C0 LAUNCH REFUSED"; exit 1; }
   say "$id C0 STARTED pid $(pid_of "$id" C0)"
