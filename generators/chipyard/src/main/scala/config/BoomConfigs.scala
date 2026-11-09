@@ -417,6 +417,16 @@ class CoreFuzzingDMINoCevNoLogConfig extends Config(
   new boom.v3.common.WithSpecASan() ++ new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++
   new CoreFuzzingDMINoLogConfig)
 
+// ---- Defense power (owner 2026-11-06 RULES C 'Power plan now, runs later'; claude-artifacts/ooc-synthesis/plans/defense-power-plan.md).
+// Own names (no '_') so the traced debug build (USE_FST=1, --trace-underscore, tile_trace.vlt) never overwrites a shared simulator or
+// its generated-src. Hardware = the NoLog parents (commit-log + CF debug printfs compiled out).
+class CoreFuzzingDMIPowerConfig extends Config(new CoreFuzzingDMINoLogConfig)
+class CoreFuzzingDMIAllDefPowerConfig extends Config(new CoreFuzzingDMIAllDefNoLogConfig)
+// option C: class CoreFuzzingDMISTTPowerConfig extends Config(new CoreFuzzingDMISTTNoLogConfig)
+//           class CoreFuzzingDMISTTDoppelgangerPowerConfig extends Config(new CoreFuzzingDMISTTDoppelgangerNoLogConfig)
+//           class CoreFuzzingDMISpecASanPowerConfig extends Config(new CoreFuzzingDMISpecASanNoLogConfig)
+//           class CoreFuzzingDMICevichePowerConfig extends Config(new CoreFuzzingDMICevicheNoLogConfig)
+
 // FireSim FPGA variant: inherits ALL parameters from CoreFuzzingConfig.
 // Adds WithIFTBridge which exports IFT commit/squash records as tile IO for GoldenGate synthesis.
 // WithIFTPunchthrough (in AbstractConfig) creates the IFTPort; WithIFTVBridge (firechip) connects it.
