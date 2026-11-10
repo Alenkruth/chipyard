@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # pilot.sh -- run list of the activity-based power pilot (plan claude-artifacts/ooc-synthesis/plans/power-pilot-plan.md, section 3).
 #
-# Purpose : one documented, parameterised script for the steps P0 B1 B2 P1 P2 P3 S0 C0 S1 S2 C1 V0 V1 of the pilot.
+# Purpose : one documented, parameterised script for the steps P0 B1 B2 P1 P2 P3 S0 C0 S1 S2 C1 V0 V1 of the pilot, plus B0 (FIRRTL only,
+#           no Verilator: defense scaling) and PK (forced-activity peak power on the P2 checkpoint).
 #           Long steps are launched fully detached (setsid nohup ... < /dev/null &); the script returns at once.  Each launched
 #           step leaves $W/logs/<step>.{pid,start,rc,end,log,cmd.sh}; a runner uses `wait` (kill -0 loop, never pgrep -f) from
 #           a run_in_background command and reports the milestones (start, end with rc and numbers, failure) to its parent.
@@ -27,6 +28,7 @@
 #                    e.g. 16 when the controller grants <= 20 threads)
 #   R A N            window: R testbench cycles per core cycle, A first window core cycle, N cycles (100000); `window` computes them
 #   VIVADO_BIN XILINX_PART OUT_PERIOD_NS [10] CLOCK_NS [1.0, testbench clock period] C0_FROM [20000] C0_CYCLES [1000]
+#   PEAK_T [50]      PK: toggle rate in percent of the forced-activity peak report (synth/power_peak.tcl); report $W/pk/power_peak<T>.rpt
 #   PROBES           space-separated probe net names for V1 (found in V0: $W/v0/probe_candidates.txt)
 #   FIND_PATTERNS    V0 net-name search patterns ["*csr* *reset*"]
 #   RCSR             reconfig-CSR file; S0/S1/S2 append ` +reconfig_csrs=$RCSR` after the ELF and log RCSR_FILE/RCSR_SHA1/RCSR_LOADED.
@@ -87,6 +89,7 @@ SEED_ARGS="+verilator+seed+1 +verilator+rand+reset+2"
 RCSR="${RCSR:-}"; RCSR_ARG="${RCSR:+ +reconfig_csrs=$RCSR}"   # DTM delivers these CSR writes before the program starts (plusarg after the ELF)
 FST_V="$CY/.conda-env/share/verilator/include/gtkwave"
 OOC_MAX_BUILDS="${OOC_MAX_BUILDS:-2}"; MAX_SIMS="${MAX_SIMS:-2}"
+PEAK_T="${PEAK_T:-50}"   # PK toggle rate (percent)
 B1_VT="${B1_VT:-20}"   # VERILATOR_THREADS of B1 (default 20 = unchanged)
 B1_J="${B1_J:-20}"   # make -j of B1 (the controller may grant less beside other builds, e.g. B1_J=10)
 R="${R:-}"; A="${A:-}"
@@ -184,6 +187,30 @@ step_P0() {
     echo "builds running: $(n_builds)  simulators running: $(n_sims)"
     echo "controller must confirm: tree stable (no mid-edit in generators/boom) and a build window"; } > "$t"
   if [ "$DRYRUN" != 1 ]; then ok "written $t"; fi
+}
+step_B0() {
+  say "B0 FIRRTL only ($CONFIG: sbt elaboration, make firrtl, no Verilator; defense scaling)"
+  chk_common; chk_slot build
+  if pgrep -f '^\S*java .*(sbt-launch|xsbt\.boot)' >/dev/null 2>&1; then
+    if [ "$DRYRUN" = 1 ]; then pend "an sbt is running now (one sbt at a time host-wide): a launch would wait"
+    else bad "an sbt is running (one sbt at a time host-wide): wait and retry"; fi
+  else ok "no sbt running now"; fi
+  chk_exec make "make"; chk_exec "$FIRTOOL_BIN" "firtool"
+  if grep -q "class $CONFIG " "$CY/generators/chipyard/src/main/scala/config/BoomConfigs.scala" 2>/dev/null; then ok "config class $CONFIG present"
+  elif [ "$DRYRUN" = 1 ]; then pend "class $CONFIG missing in BoomConfigs.scala (its config diff is not applied yet)"
+  else bad "class $CONFIG missing in BoomConfigs.scala"; fi
+  if grep -q '^firrtl:' "$CY/common.mk" 2>/dev/null; then ok "make target firrtl exists (common.mk)"; else bad "common.mk has no firrtl: target"; fi
+  local fr; fr=$(df -Pk "$CY/sims/verilator" | awk 'NR==2{print int($4/1048576)}')
+  if [ "${fr:-0}" -ge 10 ]; then ok "free space sims/verilator: ${fr} GB"; else bad "free space sims/verilator ${fr} GB < 10"; fi
+  launch B0 "$(hdr)
+export PATH=$(dirname "$FIRTOOL_BIN"):\$PATH
+cd $CY/sims/verilator
+make firrtl CONFIG=$CONFIG
+rc=\$?
+ls -l $GENSRC/$LONG.fir || rc=1
+ls -l $GENSRC/$LONG.appended.anno.json || rc=1
+sha1sum $GENSRC/$LONG.fir
+exit \$rc"
 }
 step_B1() {
   say "B1 sim build ($CONFIG, FST, trace-underscore, tile .vlt)"
@@ -425,9 +452,23 @@ echo V1_VECTORLESS=\$(grep -m1 'Dynamic (W)' $W/v1/vectorless.rpt)
 echo V1_ACTIVITY=\$(grep -m1 'Dynamic (W)' $W/v1/saif.rpt)
 echo V1_ACTIVITY_NOU=\$(grep -m1 'Dynamic (W)' $W/v1_nou/saif.rpt)"
 }
+step_PK() {
+  say "PK forced-activity peak power on the P2 checkpoint (power_peak.tcl, PEAK_T=$PEAK_T)"
+  chk_common; chk_slot vivado
+  chk_exec "$VIVADO_BIN" "vivado"; chk_file "$TOOLS/synth/power_peak.tcl" "power_peak.tcl"; chk_later "$POINT/post_synth.dcp" "P2 checkpoint"
+  launch PK "$(hdr)
+mkdir -p $W/pk
+cd $W/pk || exit 1   # Vivado writes .Xil/ into its cwd: keep it out of the repo
+PEAK_DCP=$POINT/post_synth.dcp PEAK_OUT=$W/pk PEAK_T=$PEAK_T OOC_MAX_THREADS=8 $VIVADO_BIN -mode batch -nojournal -nolog -source $TOOLS/synth/power_peak.tcl > $W/pk/vivado.log 2>&1
+rc=\$?
+echo VIVADO_RC=\$rc
+grep -E 'PWR_STEP|PWR_INFO|PWR_FAIL|PWR_WARN|PWR_ERROR|PWR_DONE' $W/pk/vivado.log
+cat $W/pk/peak_summary.txt
+exit \$rc"
+}
 step_status() {
   local s pid rc t0 t1 alive
-  for s in B1 B2 P1 P1F P2 P3 S0 C0 S1 S2 C1 V0 V1; do
+  for s in B0 B1 B2 P1 P1F P2 PK P3 S0 C0 S1 S2 C1 V0 V1; do
     if [ ! -e "$LOGS/$s.start" ]; then printf '%-3s not started\n' "$s"; continue; fi
     rc="-"; alive=no
     pid=$(cat "$LOGS/$s.pid" 2>/dev/null); if kill -0 "$pid" 2>/dev/null; then alive=yes; fi
@@ -455,6 +496,7 @@ P1F tile RTL from the sim's own FIRRTL (defense power points, PT_PARAMS=fir; rep
 S0 smoke trace                            C0 converter check vs reference       S1 untraced reference run
 window (R, A, N, MAXC)                    S2 traced run                         C1 conversion (2 SAIFs)
 V0 naming check (smoke SAIF)              V1 activity power (2 SAIFs)           status | wait <step> | check
+B0 FIRRTL only (make firrtl, no Verilator; defense scaling: before P1F)   PK forced-activity peak power on the P2 dcp (power_peak.tcl, PEAK_T)
 Order: P0 -> B1 -> (P1 -> P2) in parallel with (B2, S0, C0, S1, window, S2, C1); V0 after P2 and S0; V1 after P2 and C1.
 EOF
 }
@@ -462,13 +504,13 @@ EOF
 cmd="${1:-}"; shift || true
 rc=0
 case "$cmd" in
-  P0|B1|B2|P1|P1F|P2|P3|S0|C0|S1|S2|C1|V0|V1|window) "step_$cmd"; rc=$? ;;
+  P0|B0|B1|B2|P1|P1F|P2|PK|P3|S0|C0|S1|S2|C1|V0|V1|window) "step_$cmd"; rc=$? ;;
   status) step_status; exit 0 ;;
   wait) step_wait "${1:-}" ;;
   list) step_list; exit 0 ;;
   check)
     DRYRUN=1
-    for s in P0 B1 B2 P1 P1F P2 P3 S0 C0 S1 window S2 C1 V0 V1; do echo; "step_$s"; done
+    for s in P0 B0 B1 B2 P1 P1F P2 PK P3 S0 C0 S1 window S2 C1 V0 V1; do echo; "step_$s"; done
     echo; say "DRYRUN SUMMARY ok=$NOK pending=$NPEND FAIL=$NFAIL (nothing launched)"
     if [ "$NFAIL" -eq 0 ]; then exit 0; else exit 1; fi ;;
   *) sed -n 2,29p "$0"; exit 2 ;;
