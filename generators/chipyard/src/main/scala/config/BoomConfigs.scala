@@ -422,10 +422,11 @@ class CoreFuzzingDMINoCevNoLogConfig extends Config(
 // its generated-src. Hardware = the NoLog parents (commit-log + CF debug printfs compiled out).
 class CoreFuzzingDMIPowerConfig extends Config(new CoreFuzzingDMINoLogConfig)
 class CoreFuzzingDMIAllDefPowerConfig extends Config(new CoreFuzzingDMIAllDefNoLogConfig)
-// option C: class CoreFuzzingDMISTTPowerConfig extends Config(new CoreFuzzingDMISTTNoLogConfig)
-//           class CoreFuzzingDMISTTDoppelgangerPowerConfig extends Config(new CoreFuzzingDMISTTDoppelgangerNoLogConfig)
-//           class CoreFuzzingDMISpecASanPowerConfig extends Config(new CoreFuzzingDMISpecASanNoLogConfig)
-//           class CoreFuzzingDMICevichePowerConfig extends Config(new CoreFuzzingDMICevicheNoLogConfig)
+// option C (enabled for the defense-scaling plan, owner 2026-11-09): one defense per class on the max core, NoLog parents.
+class CoreFuzzingDMISTTPowerConfig extends Config(new CoreFuzzingDMISTTNoLogConfig)
+class CoreFuzzingDMISTTDoppelgangerPowerConfig extends Config(new CoreFuzzingDMISTTDoppelgangerNoLogConfig)
+class CoreFuzzingDMISpecASanPowerConfig extends Config(new CoreFuzzingDMISpecASanNoLogConfig)
+class CoreFuzzingDMICevichePowerConfig extends Config(new CoreFuzzingDMICevicheNoLogConfig)
 
 // FireSim FPGA variant: inherits ALL parameters from CoreFuzzingConfig.
 // Adds WithIFTBridge which exports IFT commit/squash records as tile IO for GoldenGate synthesis.
@@ -641,3 +642,27 @@ class MegaBoomIFTStaticDMIConfig extends Config(
 class MegaExactBoomIFTStaticDMIConfig extends Config(
   new chipyard.WithMegaExactSnap ++
   new MegaBoomIFTStaticDMIConfig)
+
+// ---- Defense scaling OOC (owner 2026-11-09 RULES C 'Defense area/peak power across uarch sizes'; ooc-synthesis/plans/defense-scaling-ooc-plan.md).
+// Area/power OOC only (no sim). NoLog fragments so the RTL matches CoreFuzzingDMIPowerConfig (CF debug printfs default ON, parameters.scala:168).
+// Names have no '_' (config-string parser). The defense fragments sit left of the size config, as in CoreFuzzingDMISTTConfig.
+// Reconf/Cev on Small and Medium need the R1 clamp diff (fetch-buffer pad, D$ victim select); without R1 they do not elaborate.
+class WithScaleNoLog extends Config(new boom.v3.common.WithoutBoomCommitLogPrintf ++ new boom.v3.common.WithoutCfDebugPrintf)
+class SmallBoomScaleBaseConfig   extends Config(new WithScaleNoLog ++ new SmallBoomIFTStaticDMIConfig)
+class SmallBoomScaleSTTConfig    extends Config(new WithScaleNoLog ++ new boom.v3.common.WithSTT ++ new SmallBoomIFTStaticDMIConfig)
+class SmallBoomScaleDGLConfig    extends Config(new WithScaleNoLog ++ new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++ new SmallBoomIFTStaticDMIConfig)
+class SmallBoomScaleSAConfig     extends Config(new WithScaleNoLog ++ new boom.v3.common.WithSpecASan() ++ new SmallBoomIFTStaticDMIConfig)
+class SmallBoomScaleReconfConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithReconf ++ new SmallBoomIFTStaticDMIConfig)  // needs R1
+class SmallBoomScaleCevConfig    extends Config(new WithScaleNoLog ++ new boom.v3.common.WithCeviche ++ new boom.v3.common.WithReconf ++ new SmallBoomIFTStaticDMIConfig)  // needs R1
+class MediumBoomScaleBaseConfig   extends Config(new WithScaleNoLog ++ new MediumBoomIFTStaticDMIConfig)
+class MediumBoomScaleSTTConfig    extends Config(new WithScaleNoLog ++ new boom.v3.common.WithSTT ++ new MediumBoomIFTStaticDMIConfig)
+class MediumBoomScaleDGLConfig    extends Config(new WithScaleNoLog ++ new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++ new MediumBoomIFTStaticDMIConfig)
+class MediumBoomScaleSAConfig     extends Config(new WithScaleNoLog ++ new boom.v3.common.WithSpecASan() ++ new MediumBoomIFTStaticDMIConfig)
+class MediumBoomScaleReconfConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithReconf ++ new MediumBoomIFTStaticDMIConfig)  // needs R1
+class MediumBoomScaleCevConfig    extends Config(new WithScaleNoLog ++ new boom.v3.common.WithCeviche ++ new boom.v3.common.WithReconf ++ new MediumBoomIFTStaticDMIConfig)  // needs R1
+class MegaBoomScaleBaseConfig   extends Config(new WithScaleNoLog ++ new MegaBoomIFTStaticDMIConfig)
+class MegaBoomScaleSTTConfig    extends Config(new WithScaleNoLog ++ new boom.v3.common.WithSTT ++ new MegaBoomIFTStaticDMIConfig)
+class MegaBoomScaleDGLConfig    extends Config(new WithScaleNoLog ++ new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++ new MegaBoomIFTStaticDMIConfig)
+class MegaBoomScaleSAConfig     extends Config(new WithScaleNoLog ++ new boom.v3.common.WithSpecASan() ++ new MegaBoomIFTStaticDMIConfig)
+class MegaBoomScaleReconfConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithReconf ++ new MegaBoomIFTStaticDMIConfig)
+class MegaBoomScaleCevConfig    extends Config(new WithScaleNoLog ++ new boom.v3.common.WithCeviche ++ new boom.v3.common.WithReconf ++ new MegaBoomIFTStaticDMIConfig)
