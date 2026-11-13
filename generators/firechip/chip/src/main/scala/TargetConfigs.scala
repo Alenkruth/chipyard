@@ -480,6 +480,28 @@ class FireSimBaselineBoomCheckpoint32GBNoTraceConfig extends Config(
   new FireSimBaselineBoomCheckpoint32GBConfig
 )
 
+// [SPEC-DEF 2026-11-12] IFT-free SPEC checkpoint images with runtime reconfiguration plus the hardware defenses (owner 2026-11-12
+// ~21:1x: "stage config and check. We can run the bitstream at 30MHz."). Shell = FireSimReconfBoomCheckpoint32GBNoTraceConfig
+// unchanged (Sv57, 32 GiB, no PMPs, DMI loadarch, no TracerV; AutoCounter comes from the platform config); only the defense
+// gates are added, same fragments and order as FireSimCoreFuzzingIFTDMILeanAllDefConfig. Run-time select (all reset 0 = off):
+// 0xbd0 STT (0x1 Spectre / 0x3 Futuristic), 0xbd2 DGL, 0xbd4 SpecASan, 0xbd6 Ceviche. Ceviche without IFT needs C1 (N1.r1,
+// CEV_OWN_DOM) in generators/boom; its domain is the attacker PC range 0x7c6/0x7c7 (0 = everything is domain 0).
+//
+// AllDef does NOT elaborate on Sv57: functional-unit.scala:766 require(vaddrBits <= 55) "SpecASan ... (Sv57 unsupported)".
+// Kept so the blocker is explicit; buildable only after a SpecASan Sv57 port. No build recipe uses it.
+class FireSimReconfAllDefCheckpoint32GBNoTraceConfig extends Config(
+  new boom.v3.common.WithCeviche ++ new boom.v3.common.WithSpecASan() ++
+  new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++
+  new FireSimReconfBoomCheckpoint32GBNoTraceConfig
+)
+
+// NoSA: STT-S / STT-F, DGL, Ceviche (no SpecASan). The buildable SPEC defense image.
+class FireSimReconfNoSACheckpoint32GBNoTraceConfig extends Config(
+  new boom.v3.common.WithCeviche ++
+  new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++
+  new FireSimReconfBoomCheckpoint32GBNoTraceConfig
+)
+
 class FireSimBaselineBoomConfig extends Config(
   new WithDefaultFireSimBridges ++
   new WithFireSimConfigTweaks ++
