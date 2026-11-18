@@ -643,6 +643,21 @@ class MegaExactBoomIFTStaticDMIConfig extends Config(
   new chipyard.WithMegaExactSnap ++
   new MegaBoomIFTStaticDMIConfig)
 
+// [static-fpmatch 2026-11-15] Owner 16:4x: static Small/Medium with the masked twin's FP register file, so FP-heavy code (mm) compares
+// like for like. The twin's FP PRF comes from 0xbc7 via fpPregFileSizeOptions (96,64,48,40,40; rocket-chip util/CoreFuzzing.scala:209):
+// small.rcsr 0xbc7=4 -> 40 (static 48), medium.rcsr 0xbc7=2 -> 48 (static 64). FP issue width is already 1 in both static mixins;
+// Mega's match is MegaExactBoomIFTStaticDMIConfig (FP issue 1, FP PRF 64 = 0xbc7=1). Only numFpPhysRegisters changes. Place LEFT of the size config.
+class WithFpPregsSnap(n: Int) extends Config((site, here, up) => {
+  case freechips.rocketchip.subsystem.TilesLocated(freechips.rocketchip.subsystem.InSubsystem) =>
+    up(freechips.rocketchip.subsystem.TilesLocated(freechips.rocketchip.subsystem.InSubsystem), site) map {
+      case tp: boom.v3.common.BoomTileAttachParams =>
+        tp.copy(tileParams = tp.tileParams.copy(core = tp.tileParams.core.copy(numFpPhysRegisters = n)))
+      case other => other
+    }
+})
+class SmallFpMatchBoomIFTStaticDMIConfig  extends Config(new chipyard.WithFpPregsSnap(40) ++ new SmallBoomIFTStaticDMIConfig)
+class MediumFpMatchBoomIFTStaticDMIConfig extends Config(new chipyard.WithFpPregsSnap(48) ++ new MediumBoomIFTStaticDMIConfig)
+
 // ---- Defense scaling OOC (owner 2026-11-09 RULES C 'Defense area/peak power across uarch sizes'; ooc-synthesis/plans/defense-scaling-ooc-plan.md).
 // Area/power OOC only (no sim). NoLog fragments so the RTL matches CoreFuzzingDMIPowerConfig (CF debug printfs default ON, parameters.scala:168).
 // Names have no '_' (config-string parser). The defense fragments sit left of the size config, as in CoreFuzzingDMISTTConfig.
@@ -785,3 +800,73 @@ class MinV2BoomNoIFTScaleSTTConfig extends Config(new WithScaleNoLog ++ new boom
 class MinV2BoomNoIFTScaleDGLConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++ new MinV2BoomNoIFTStaticDMIConfig)
 class MinV2BoomNoIFTScaleSAConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithSpecASan() ++ new MinV2BoomNoIFTStaticDMIConfig)
 class MinV2BoomNoIFTScaleCevConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithCeviche ++ new boom.v3.common.WithReconf ++ new MinV2CevBoomNoIFTStaticDMIConfig)
+// MIN v2 Ceviche at 1 way (scope 2026-11-15, needs the [CEV1W] boom diff): the MIN v2 base geometry (I$ 8x1, D$ 16x1) plus Ceviche and the
+// reconfiguration Ceviche needs (parameters.scala:206). OOC cell NV1; the DMI twin is the Verilator build for the directed Ceviche tests.
+class MinV2Cev1wBoomNoIFTScaleCevConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithCeviche ++ new boom.v3.common.WithReconf ++ new MinV2BoomNoIFTStaticDMIConfig)
+class MinV2Cev1wBoomNoIFTDMIConfig extends Config(new boom.v3.common.WithCeviche ++ new boom.v3.common.WithReconf ++ new MinV2BoomNoIFTStaticDMIConfig)
+
+// ---- SPEC-matched paper configs S, M, L (owner 2026-11-16 17:3x; staged/defense-specmatch/KNOBS.md). Area/power OOC only, no IFT, no reconf outside Ceviche.
+// Sizes = the August SPEC ladder points: S <- cfg01 (W1), M <- cfg07 (W2), L <- cfg17 (W4) (campaign-ipc-605rows.csv config_decoded).
+// Non-ladder parameters (fetch width, MSHRs, row/bus width, prefetch, printfs) = the current paper parent of the same width class:
+// S = MinV2 (WithNSmallBooms, 64-bit bus), M = MediumBoomNoIFTStaticDMIConfig (WithNMediumBooms), L = MegaBoomNoIFTStaticDMIConfig (WithNMegaBooms, 128-bit bus).
+// Ladder GShare (cfg01) -> tage=1 (WithPowerCalSizes has no GShare; same as MIN). D$ replacement is runtime-selected (all policies built). MAX is not rebuilt (NX* reused).
+// WithPowerCalSizes sits LEFT of the size mixin (it edits up(TilesLocated)). Names have no '_'.
+class SpecMatchSBoomNoIFTStaticDMIConfig extends Config(
+  new chipyard.harness.WithSerialTLTiedOff ++
+  new chipyard.config.WithDMIDTM ++
+  new boom.v3.common.WithoutMemtracePrintf ++
+  new chipyard.WithL2Wipe ++
+  new WithPowerCalSizes(
+    "btb_sets=32;btb_ways=1;dc_sets=16;dc_ways=1;fb=8;fprf=48;ftq=8;ic_sets=8;ic_ways=1;iprf=96;iq_fp=8;iq_int=8;iq_mem=8;ldq=8;ras=4;rob=32;stq=8;tage=1;width=1") ++
+  new boom.v3.common.WithNSmallBooms(1) ++          // commit-log printf already in the mixin; 64-bit bus
+  new chipyard.config.AbstractConfig)
+
+// S Ceviche parent: same, 2-way I$/D$ (Ceviche rejects a direct-mapped I$, icache.scala:158), as MinCev / MinV2Cev.
+class SpecMatchSCevBoomNoIFTStaticDMIConfig extends Config(
+  new chipyard.harness.WithSerialTLTiedOff ++
+  new chipyard.config.WithDMIDTM ++
+  new boom.v3.common.WithoutMemtracePrintf ++
+  new chipyard.WithL2Wipe ++
+  new WithPowerCalSizes(
+    "btb_sets=32;btb_ways=1;dc_sets=16;dc_ways=2;fb=8;fprf=48;ftq=8;ic_sets=8;ic_ways=2;iprf=96;iq_fp=8;iq_int=8;iq_mem=8;ldq=8;ras=4;rob=32;stq=8;tage=1;width=1") ++
+  new boom.v3.common.WithNSmallBooms(1) ++
+  new chipyard.config.AbstractConfig)
+
+class SpecMatchMBoomNoIFTStaticDMIConfig extends Config(
+  new chipyard.harness.WithSerialTLTiedOff ++
+  new chipyard.config.WithDMIDTM ++
+  new boom.v3.common.WithoutMemtracePrintf ++
+  new chipyard.WithL2Wipe ++
+  new boom.v3.common.WithBoomCommitLogPrintf ++     // as MediumBoomNoIFTStaticDMIConfig; removed again by WithScaleNoLog
+  new WithPowerCalSizes(
+    "btb_sets=64;btb_ways=1;dc_sets=32;dc_ways=2;fb=16;fprf=64;ftq=16;ic_sets=16;ic_ways=2;iprf=128;iq_fp=16;iq_int=16;iq_mem=16;ldq=16;ras=8;rob=96;stq=16;tage=3") ++
+  new boom.v3.common.WithNMediumBooms(1) ++         // 64-bit bus
+  new chipyard.config.AbstractConfig)
+
+class SpecMatchLBoomNoIFTStaticDMIConfig extends Config(
+  new chipyard.harness.WithSerialTLTiedOff ++
+  new chipyard.config.WithDMIDTM ++
+  new boom.v3.common.WithoutMemtracePrintf ++
+  new chipyard.WithL2Wipe ++
+  new chipyard.WithoutBoomBranchPrintf ++
+  new WithPowerCalSizes(
+    "btb_sets=128;btb_ways=2;dc_sets=128;dc_ways=4;fb=48;fprf=96;ftq=32;ic_sets=32;ic_ways=4;iprf=192;iq_fp=32;iq_int=32;iq_mem=32;ldq=32;ras=32;rob=192;stq=32;tage=5") ++
+  new boom.v3.common.WithNMegaBooms(1) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new chipyard.config.AbstractConfig)
+
+class SpecMatchSBoomNoIFTScaleBaseConfig extends Config(new WithScaleNoLog ++ new SpecMatchSBoomNoIFTStaticDMIConfig)
+class SpecMatchSBoomNoIFTScaleSTTConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithSTT ++ new SpecMatchSBoomNoIFTStaticDMIConfig)
+class SpecMatchSBoomNoIFTScaleDGLConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++ new SpecMatchSBoomNoIFTStaticDMIConfig)
+class SpecMatchSBoomNoIFTScaleSAConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithSpecASan() ++ new SpecMatchSBoomNoIFTStaticDMIConfig)
+class SpecMatchSBoomNoIFTScaleCevConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithCeviche ++ new boom.v3.common.WithReconf ++ new SpecMatchSBoomNoIFTStaticDMIConfig)
+class SpecMatchMBoomNoIFTScaleBaseConfig extends Config(new WithScaleNoLog ++ new SpecMatchMBoomNoIFTStaticDMIConfig)
+class SpecMatchMBoomNoIFTScaleSTTConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithSTT ++ new SpecMatchMBoomNoIFTStaticDMIConfig)
+class SpecMatchMBoomNoIFTScaleDGLConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++ new SpecMatchMBoomNoIFTStaticDMIConfig)
+class SpecMatchMBoomNoIFTScaleSAConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithSpecASan() ++ new SpecMatchMBoomNoIFTStaticDMIConfig)
+class SpecMatchMBoomNoIFTScaleCevConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithCeviche ++ new boom.v3.common.WithReconf ++ new SpecMatchMBoomNoIFTStaticDMIConfig)
+class SpecMatchLBoomNoIFTScaleBaseConfig extends Config(new WithScaleNoLog ++ new SpecMatchLBoomNoIFTStaticDMIConfig)
+class SpecMatchLBoomNoIFTScaleSTTConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithSTT ++ new SpecMatchLBoomNoIFTStaticDMIConfig)
+class SpecMatchLBoomNoIFTScaleDGLConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithDoppelganger() ++ new boom.v3.common.WithSTT ++ new SpecMatchLBoomNoIFTStaticDMIConfig)
+class SpecMatchLBoomNoIFTScaleSAConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithSpecASan() ++ new SpecMatchLBoomNoIFTStaticDMIConfig)
+class SpecMatchLBoomNoIFTScaleCevConfig extends Config(new WithScaleNoLog ++ new boom.v3.common.WithCeviche ++ new boom.v3.common.WithReconf ++ new SpecMatchLBoomNoIFTStaticDMIConfig)
